@@ -26,24 +26,26 @@
  */
 package com.salesforce.samples.smartstoreexplorer;
 
-import android.app.Activity;
+import android.app.Application;
 
-import com.salesforce.androidsdk.app.ForceAppWithSmartStore;
-import com.salesforce.androidsdk.security.Encryptor;
-import com.salesforce.androidsdk.ui.SalesforceDroidGapActivity;
+import com.salesforce.androidsdk.smartstore.app.SalesforceSDKManagerWithSmartStore;
 
 /**
  * Application class for the SmartStoreExplorer app.
  */
-public class SmartStoreExplorerApp extends ForceAppWithSmartStore {
+public class SmartStoreExplorerApp extends Application {
 
-    @Override
-    public Class<? extends Activity> getMainActivityClass() {
-        return SalesforceDroidGapActivity.class;
-    }
+	@Override
+	public void onCreate() {
+		super.onCreate();
+		SalesforceSDKManagerWithSmartStore.initHybrid(getApplicationContext(), new KeyImpl());
 
-    @Override
-    protected String getKey(String name) {
-    	return Encryptor.hash(name + "W00h00t!11", name + "G@nd01f");
-    }
+		/*
+		 * Un-comment the line below to enable push notifications in this app.
+		 * Replace 'pnInterface' with your implementation of 'PushNotificationInterface'.
+		 * Add your Google package ID in 'bootonfig.json', as the value
+		 * for the key 'androidPushNotificationClientId'.
+		 */
+		// SalesforceSDKManagerWithSmartStore.getInstance().setPushNotificationReceiver(pnInterface);
+	}
 }

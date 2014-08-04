@@ -27,7 +27,7 @@ process_args()
     done
 }
 
-wrong_directory_usage ()
+wrong_directory_usage()
 {
     echo "You must run this tool from the root directory of your repo clone"
 }
@@ -46,31 +46,25 @@ usage ()
     echo "        SalesforceSDK"
     echo "        SmartStore"
     echo "        RestExplorer"
+    echo "        NativeSqlAggregator"
+    echo "        FileExplorer"
     echo "        TemplateApp"
-    echo "        CloudTunes"
+    echo "        AccountEditor"
+    echo "        HybridFileExplorer"
     echo "        ContactExplorer"
     echo "        VFConnector"
-    echo "        SFDCAccounts"
     echo "        SmartStoreExplorer"
     echo "        SalesforceSDKTest"
     echo "        RestExplorerTest"
     echo "        TemplateAppTest"
-    echo "        ContactExplorerTest"
     echo "        ForcePluginsTest"
-    echo "        VFConnectorTest"
-    echo "        SFDCAccountsTest"
-    echo "        SmartStoreExplorerTest"
     echo "    <test_target> can be "
     echo "        all"
     echo "        SalesforceSDKTest"
     echo "        SmartStoreTest"
     echo "        RestExplorerTest"
     echo "        TemplateAppTest"
-    echo "        ContactExplorerTest"
     echo "        ForcePluginsTest"
-    echo "        VFConnectorTest"
-    echo "        SFDCAccountsTest"
-    echo "        SmartStoreExplorerTest"
 }
 
 verbose ()
@@ -111,7 +105,16 @@ build_project_if_requested ()
     then
         header "Building project $1"
         cd $2
-        android update project -p . | grep "$BUILD_OUTPUT_FILTER"
+        if [ -z $3 ]
+        then
+            API_VERSION=`cat AndroidManifest.xml | grep minSdkVersion | cut -d"\"" -f2`
+        else
+            API_VERSION=$3
+        fi
+        ANDROID_TARGET=`android list target | grep "android-$API_VERSION" | cut -d" "  -f2`
+        # echo "API_VERSION=$API_VERSION"
+        # echo "ANDROID_TARGET=$ANDROID_TARGET"
+        android update project -p . -t "$ANDROID_TARGET" | grep "$BUILD_OUTPUT_FILTER"
         ant clean debug | grep "$BUILD_OUTPUT_FILTER"
         cd $TOP
     fi
@@ -148,13 +151,15 @@ then
 else
     process_args $@
 
-    build_project_if_requested "SalesforceSDK" $NATIVE_TOP/SalesforceSDK
-    build_project_if_requested "TemplateApp" $NATIVE_TOP/TemplateApp
-    build_project_if_requested "CloudTunes" $NATIVE_TOP/SampleApps/CloudTunes
-    build_project_if_requested "RestExplorer" $NATIVE_TOP/SampleApps/RestExplorer
+    build_project_if_requested "SalesforceSDK" $NATIVE_TOP/SalesforceSDK 11
     build_project_if_requested "SmartStore" $HYBRID_TOP/SmartStore
+    build_project_if_requested "TemplateApp" $NATIVE_TOP/TemplateApp
+    build_project_if_requested "RestExplorer" $NATIVE_TOP/SampleApps/RestExplorer
+    build_project_if_requested "NativeSqlAggregator" $NATIVE_TOP/SampleApps/NativeSqlAggregator
+    build_project_if_requested "FileExplorer" $NATIVE_TOP/SampleApps/FileExplorer
+    build_project_if_requested "AccountEditor" $HYBRID_TOP/SampleApps/AccountEditor
+    build_project_if_requested "HybridFileExplorer" $HYBRID_TOP/SampleApps/HybridFileExplorer
     build_project_if_requested "ContactExplorer" $HYBRID_TOP/SampleApps/ContactExplorer
-    build_project_if_requested "SFDCAccounts" $HYBRID_TOP/SampleApps/SFDCAccounts
     build_project_if_requested "SmartStoreExplorer" $HYBRID_TOP/SampleApps/SmartStoreExplorer
     build_project_if_requested "VFConnector" $HYBRID_TOP/SampleApps/VFConnector
 
@@ -163,18 +168,10 @@ else
     build_test_project_if_requested "RestExplorerTest" $NATIVE_TOP/SampleApps/test/RestExplorerTest ../../RestExplorer
     build_test_project_if_requested "ForcePluginsTest" $HYBRID_TOP/test/ForcePluginsTest .
     build_test_project_if_requested "SmartStoreTest" $HYBRID_TOP/test/SmartStoreTest .
-    build_test_project_if_requested "ContactExplorerTest" $HYBRID_TOP/SampleApps/test/ContactExplorerTest ../../ContactExplorer
-    build_test_project_if_requested "SFDCAccountsTest" $HYBRID_TOP/SampleApps/test/SFDCAccountsTest ../../SFDCAccounts
-    build_test_project_if_requested "SmartStoreExplorerTest" $HYBRID_TOP/SampleApps/test/SmartStoreExplorerTest ../../SmartStoreExplorer
-    build_test_project_if_requested "VFConnectorTest" $HYBRID_TOP/SampleApps/test/VFConnectorTest ../../VFConnector
 
     run_test_project_if_requested "SalesforceSDKTest" $NATIVE_TOP/test/SalesforceSDKTest
     run_test_project_if_requested "TemplateAppTest" $NATIVE_TOP/test/TemplateAppTest
     run_test_project_if_requested "RestExplorerTest" $NATIVE_TOP/SampleApps/test/RestExplorerTest
     run_test_project_if_requested "ForcePluginsTest" $HYBRID_TOP/test/ForcePluginsTest
     run_test_project_if_requested "SmartStoreTest" $HYBRID_TOP/test/SmartStoreTest
-    run_test_project_if_requested "ContactExplorerTest" $HYBRID_TOP/SampleApps/test/ContactExplorerTest
-    run_test_project_if_requested "SFDCAccountsTest" $HYBRID_TOP/SampleApps/test/SFDCAccountsTest
-    run_test_project_if_requested "SmartStoreExplorerTest" $HYBRID_TOP/SampleApps/test/SmartStoreExplorerTest
-    run_test_project_if_requested "VFConnectorTest" $HYBRID_TOP/SampleApps/test/VFConnectorTest
 fi

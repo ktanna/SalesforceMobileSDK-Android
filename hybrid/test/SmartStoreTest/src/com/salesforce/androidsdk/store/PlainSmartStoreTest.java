@@ -28,6 +28,8 @@ package com.salesforce.androidsdk.store;
 
 import net.sqlcipher.database.SQLiteDatabase;
 
+import com.salesforce.androidsdk.smartstore.store.DBOpenHelper;
+
 /**
  * Tests for plain smart store
  *
@@ -36,6 +38,6 @@ public class PlainSmartStoreTest extends AbstractSmartStoreTest {
 
 	@Override
 	protected SQLiteDatabase getWritableDatabase() {
-		return DBOpenHelper.getOpenHelper(targetContext).getWritableDatabase("");
+		return DBOpenHelper.getOpenHelper(targetContext, null).getWritableDatabase("");
 	}
 }

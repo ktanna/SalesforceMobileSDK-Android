@@ -26,6 +26,8 @@
  */
 package com.salesforce.androidsdk.ui;
 
+import java.util.List;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
@@ -40,9 +42,10 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.TextView.OnEditorActionListener;
 
-import com.salesforce.androidsdk.app.ForceApp;
+import com.salesforce.androidsdk.accounts.UserAccount;
+import com.salesforce.androidsdk.accounts.UserAccountManager;
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.security.PasscodeManager;
-import com.salesforce.androidsdk.security.PasscodeManager.PasscodeChangeReceiver;
 
 /**
  * Passcode activity: takes care of creating/verifying a user passcode.
@@ -51,7 +54,7 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
 
     private static final String EXTRA_KEY = "input_text";
     private static final String LOGOUT_EXTRA = "logout_key";
-    protected static final int MAX_PASSCODE_ATTEMPTS = 3;
+    protected static final int MAX_PASSCODE_ATTEMPTS = 10;
 
     private PasscodeMode currentMode;
     private TextView title, instr, error;
@@ -66,7 +69,8 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
     public enum PasscodeMode {
         Create,
         CreateConfirm,
-        Check;
+        Check,
+        Change;
     }
 
     @Override
@@ -74,7 +78,7 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
         super.onCreate(savedInstanceState);
 
         // Object which allows reference to resources living outside the SDK.
-        salesforceR = ForceApp.APP.getSalesforceR();
+        salesforceR = SalesforceSDKManager.getInstance().getSalesforceR();
         setContentView(getLayoutId());
         final TextView forgotPasscodeView = getForgotPasscodeView();
         if (forgotPasscodeView != null) {
@@ -87,8 +91,18 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
         instr = getInstructionsView();
         entry = getEntryView();
         entry.setOnEditorActionListener(this);
-        passcodeManager = ForceApp.APP.getPasscodeManager();
-        setMode(passcodeManager.hasStoredPasscode(this) ? PasscodeMode.Check : PasscodeMode.Create);
+        passcodeManager = SalesforceSDKManager.getInstance().getPasscodeManager();
+        final Intent i = getIntent();
+        boolean shouldChangePasscode = false;
+        if (i != null) {
+        	shouldChangePasscode = i.getBooleanExtra(PasscodeManager.CHANGE_PASSCODE_KEY,
+        			false);
+        }
+        if (shouldChangePasscode) {
+        	setMode(PasscodeMode.Change);
+        } else {
+            setMode(passcodeManager.hasStoredPasscode(this) ? PasscodeMode.Check : PasscodeMode.Create);
+        }
         Log.i("PasscodeActivity:onCreate", "Mode: " + getMode());
         logoutEnabled = true;
         if (savedInstanceState != null) {
@@ -146,6 +160,10 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
             title.setText(getConfirmTitle());
             instr.setText(getConfirmInstructions());
             break;
+        case Change:
+            title.setText(getCreateTitle());
+            instr.setText(getChangeInstructions());
+        	break;
         }
         entry.setText("");
         error.setText("");
@@ -183,11 +201,9 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
             if (enteredPasscode.equals(firstPasscode)) {
                 final String oldPass = passcodeManager.getPasscodeHash();
                 passcodeManager.store(this, enteredPasscode);
+                SalesforceSDKManager.getInstance().changePasscode(oldPass,
+                		passcodeManager.hashForEncryption(enteredPasscode));
                 passcodeManager.unlock(enteredPasscode);
-                final Intent intent = new Intent(PasscodeChangeReceiver.PASSCODE_FLOW_INTENT);
-                intent.putExtra(PasscodeChangeReceiver.OLD_PASSCODE_EXTRA, oldPass);
-                intent.putExtra(PasscodeChangeReceiver.NEW_PASSCODE_EXTRA, passcodeManager.getPasscodeHash());
-                sendBroadcast(intent);
                 done();
             } else {
                 error.setText(getPasscodesDontMatchError());
@@ -209,11 +225,16 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
                 } else {
                     passcodeManager.reset(this);
                     if (logoutEnabled) {
-                        ForceApp.APP.logout(this);
+                        SalesforceSDKManager.getInstance().logout(this);
                     }
                 }
             }
             return true;
+
+        case Change:
+            firstPasscode = enteredPasscode;
+            setMode(PasscodeMode.CreateConfirm);
+            return false;
         }
         return false;
     }
@@ -248,19 +269,19 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
     }
 
     protected String getCreateTitle() {
-    	return String.format(getString(salesforceR.stringPasscodeCreateTitle()), ForceApp.APP.getAppDisplayString());
+    	return String.format(getString(salesforceR.stringPasscodeCreateTitle()), SalesforceSDKManager.getInstance().getAppDisplayString());
     }
 
     protected String getEnterTitle() {
-    	return String.format(getString(salesforceR.stringPasscodeEnterTitle()), ForceApp.APP.getAppDisplayString());
+    	return String.format(getString(salesforceR.stringPasscodeEnterTitle()), SalesforceSDKManager.getInstance().getAppDisplayString());
     }
 
     protected String getConfirmTitle() {
-    	return String.format(getString(salesforceR.stringPasscodeConfirmTitle()), ForceApp.APP.getAppDisplayString());
+    	return String.format(getString(salesforceR.stringPasscodeConfirmTitle()), SalesforceSDKManager.getInstance().getAppDisplayString());
     }
 
     protected String getEnterInstructions() {
-    	return String.format(getString(salesforceR.stringPasscodeEnterInstructions()), ForceApp.APP.getAppDisplayString());
+    	return String.format(getString(salesforceR.stringPasscodeEnterInstructions()), SalesforceSDKManager.getInstance().getAppDisplayString());
     }
 
     protected String getForgotPasscodeString() {
@@ -280,11 +301,15 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
     }
 
     protected String getCreateInstructions() {
-    	return String.format(getString(salesforceR.stringPasscodeCreateInstructions()), ForceApp.APP.getAppDisplayString());
+    	return String.format(getString(salesforceR.stringPasscodeCreateInstructions()), SalesforceSDKManager.getInstance().getAppDisplayString());
+    }
+
+    protected String getChangeInstructions() {
+    	return getString(salesforceR.stringPasscodeChangeInstructions());
     }
 
     protected String getConfirmInstructions() {
-    	return String.format(getString(salesforceR.stringPasscodeConfirmInstructions()), ForceApp.APP.getAppDisplayString());
+    	return String.format(getString(salesforceR.stringPasscodeConfirmInstructions()), SalesforceSDKManager.getInstance().getAppDisplayString());
     }
 
     protected String getMinLengthInstructions(int minPasscodeLength) {
@@ -352,7 +377,29 @@ public class PasscodeActivity extends Activity implements OnEditorActionListener
             @Override
             public void onClick(DialogInterface dialog,
                     int which) {
-            	ForceApp.APP.logout(PasscodeActivity.this);
+            	final UserAccountManager userAccMgr = SalesforceSDKManager.getInstance().getUserAccountManager();
+            	final List<UserAccount> userAccounts = userAccMgr.getAuthenticatedUsers();
+
+            	/*
+            	 * If the user forgot his/her passcode, we log all the authenticated
+            	 * users out. All the existing accounts except the last account
+            	 * are removed without dismissing the PasscodeActivity. The last
+            	 * account is removed, after which the PasscodeActivity is dismissed,
+            	 * and the login page is brought up at this point.
+            	 */
+            	if (userAccounts != null) {
+            		int numAccounts = userAccounts.size();
+            		if (numAccounts > 0) {
+                		for (int i = 0; i < numAccounts - 1; i++) {
+                			final UserAccount account = userAccounts.get(i);
+                        	userAccMgr.signoutUser(account, null, false);
+                		}
+            			final UserAccount lastAccount = userAccounts.get(numAccounts - 1);
+                    	userAccMgr.signoutUser(lastAccount, PasscodeActivity.this);
+            		}
+            	} else {
+            		userAccMgr.signoutCurrentUser(PasscodeActivity.this);
+            	}
             }
         }).setNegativeButton(getLogoutNoString(),
         		new DialogInterface.OnClickListener() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, salesforce.com, inc.
+ * Copyright (c) 2014, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -99,11 +99,15 @@ public class OAuth2 {
     private static final String USERNAME = "username";
     private static final String CODE = "code";
     private static final String ACTIVATED_CLIENT_CODE = "activated_client_code";
+    private static final String CUSTOM_ATTRIBUTES = "custom_attributes";
+    private static final String SFDC_COMMUNITY_ID = "sfdc_community_id";
+    private static final String SFDC_COMMUNITY_URL = "sfdc_community_url";
 
     // Login paths
     private static final String OAUTH_AUTH_PATH = "/services/oauth2/authorize?display=";
     private static final String OAUTH_TOKEN_PATH = "/services/oauth2/token";
-    
+    private static final String OAUTH_REVOKE_PATH = "/services/oauth2/revoke?token=";
+
     /**
      * Build the URL to the authorization web page for this login server.
      * You need not provide refresh_token, as it is provided automatically.
@@ -146,7 +150,6 @@ public class OAuth2 {
         if ((null != scopes) && (scopes.length > 0)) {
             //need to always have the refresh_token scope to reuse our refresh token
             sb.append("&").append(SCOPE).append("=").append(REFRESH_TOKEN);
-
             StringBuilder scopeStr = new StringBuilder();
             for (String scope : scopes) {
                 if (!scope.equalsIgnoreCase(REFRESH_TOKEN)) {
@@ -178,6 +181,18 @@ public class OAuth2 {
         return refreshAuthToken(httpAccessor, loginServer, clientId, refreshToken, null);
     }
 
+    /**
+     * Get a new auth token using the refresh token.
+     *
+     * @param httpAccessor
+     * @param loginServer
+     * @param clientId
+     * @param refreshToken
+     * @param clientSecret
+     * @return
+     * @throws OAuthFailedException
+     * @throws IOException
+     */
     public static TokenEndpointResponse refreshAuthToken(
             HttpAccess httpAccessor, URI loginServer, String clientId,
             String refreshToken, String clientSecret) throws OAuthFailedException, IOException {
@@ -188,6 +203,27 @@ public class OAuth2 {
         TokenEndpointResponse tr = makeTokenEndpointRequest(httpAccessor,
                 loginServer, params);
         return tr;
+    }
+
+    /**
+     * Revokes the existing refresh token.
+     *
+     * @param httpAccessor
+     * @param loginServer
+     * @param clientId
+     * @param refreshToken
+     * @throws OAuthFailedException
+     * @throws IOException
+     */
+    public static void revokeRefreshToken(HttpAccess httpAccessor, URI loginServer, String clientId, String refreshToken) {
+        try {
+            final StringBuilder sb = new StringBuilder(loginServer.toString());
+            sb.append(OAUTH_REVOKE_PATH);
+            sb.append(Uri.encode(refreshToken));
+            httpAccessor.doGet(null, URI.create(sb.toString()));
+        } catch (IOException e) {
+        	Log.w("OAuth2:revokeRefreshToken", e);
+        }
     }
 
      /** @returns a TokenEndointResponse from the give authorization code, this is typically the first step after
@@ -209,7 +245,6 @@ public class OAuth2 {
         List<NameValuePair> params = makeTokenEndpointParams("authorization_code", clientId, clientSecret);
         params.add(new BasicNameValuePair("code", authCode));
         params.add(new BasicNameValuePair("redirect_uri", callbackUrl));
-
         TokenEndpointResponse tr = makeTokenEndpointRequest(httpAccessor, loginServerUrl, params);
         return tr;
     }
@@ -228,7 +263,6 @@ public class OAuth2 {
     public static final IdServiceResponse callIdentityService(
             HttpAccess httpAccessor, String identityServiceIdUrl,
             String authToken) throws IOException, URISyntaxException {
-
         Map<String, String> idHeaders = new HashMap<String, String>();
         idHeaders.put("Authorization", "Bearer " + authToken);
         Execution exec = httpAccessor.doGet(idHeaders, new URI(identityServiceIdUrl));
@@ -248,9 +282,10 @@ public class OAuth2 {
             throws OAuthFailedException, IOException {
         UrlEncodedFormEntity req = new UrlEncodedFormEntity(params, "UTF-8");
         try {
-            // Call the token endpoint, and get tokens, instance url etc.
-            Execution ex = httpAccessor.doPost(null, loginServer
-                            .resolve(OAUTH_TOKEN_PATH), req);
+
+        	// Call the token endpoint, and get tokens, instance url etc.
+            final String refreshPath = loginServer.toString() + OAUTH_TOKEN_PATH;
+            Execution ex = httpAccessor.doPost(null, new URI(refreshPath), req);
             int statusCode = ex.response.getStatusLine().getStatusCode();
             if (statusCode == 200) {
                 return new TokenEndpointResponse(ex.response);
@@ -259,6 +294,8 @@ public class OAuth2 {
                         ex.response), statusCode);
             }
         } catch (UnsupportedEncodingException ex1) {
+            throw new RuntimeException(ex1); // should never happen
+        } catch (URISyntaxException ex1) {
             throw new RuntimeException(ex1); // should never happen
         }
     }
@@ -317,7 +354,6 @@ public class OAuth2 {
             JSONObject parsedResponse = new JSONObject(responseAsString);
             return parsedResponse;
         }
-
     }
 
     /**
@@ -327,20 +363,21 @@ public class OAuth2 {
         public String username;
         public int pinLength = -1;
         public int screenLockTimeout = -1;
+        public JSONObject adminPrefs;
 
         public IdServiceResponse(HttpResponse httpResponse) {
             try {
                 JSONObject parsedResponse = parseResponse(httpResponse);
                 username = parsedResponse.getString(USERNAME);
+                adminPrefs = parsedResponse.optJSONObject(CUSTOM_ATTRIBUTES);
 
-                // With connected apps (pilot in Summer '12), the server can specify a policy
+                // With connected apps (pilot in Summer '12), the server can specify a policy.
                 if (parsedResponse.has(MOBILE_POLICY)) {
                     pinLength = parsedResponse.getJSONObject(MOBILE_POLICY).getInt(PIN_LENGTH);
                     screenLockTimeout = parsedResponse.getJSONObject(MOBILE_POLICY).getInt(SCREEN_LOCK);
                 }
-
             } catch (Exception e) {
-                Log.w("IdServiceResponse:contructor", "", e);
+                Log.w("IdServiceResponse:constructor", "", e);
             }
         }
     }
@@ -359,7 +396,7 @@ public class OAuth2 {
                 errorDescription = parsedResponse
                         .getString(ERROR_DESCRIPTION);
             } catch (Exception e) {
-                Log.w("TokenErrorResponse:contructor", "", e);
+                Log.w("TokenErrorResponse:constructor", "", e);
             }
         }
 
@@ -373,6 +410,7 @@ public class OAuth2 {
      * Helper class to parse a token refresh response.
      */
     public static class TokenEndpointResponse extends AbstractResponse {
+
         public String authToken;
         public String refreshToken;
         public String instanceUrl;
@@ -381,6 +419,8 @@ public class OAuth2 {
         public String orgId;
         public String userId;
         public String code;
+        public String communityId;
+        public String communityUrl;
 
         /**
          * Constructor used during login flow
@@ -394,8 +434,10 @@ public class OAuth2 {
                 idUrl = callbackUrlParams.get(ID);
                 code = callbackUrlParams.get(CODE);
                 computeOtherFields();
+                communityId = callbackUrlParams.get(SFDC_COMMUNITY_ID);
+                communityUrl = callbackUrlParams.get(SFDC_COMMUNITY_URL);
             } catch (Exception e) {
-                Log.w("TokenEndpointResponse:contructor", "", e);
+                Log.w("TokenEndpointResponse:constructor", "", e);
             }
         }
 
@@ -413,12 +455,16 @@ public class OAuth2 {
                 if (parsedResponse.has(REFRESH_TOKEN)) {
                     refreshToken = parsedResponse.getString(REFRESH_TOKEN);
                 }
-
+                if (parsedResponse.has(SFDC_COMMUNITY_ID)) {
+                	communityId = parsedResponse.getString(SFDC_COMMUNITY_ID);
+                }
+                if (parsedResponse.has(SFDC_COMMUNITY_URL)) {
+                	communityUrl = parsedResponse.getString(SFDC_COMMUNITY_URL);
+                }
             } catch (Exception e) {
-                Log.w("TokenEndpointResponse:contructor", "", e);
+                Log.w("TokenEndpointResponse:constructor", "", e);
             }
         }
-
 
         private void computeOtherFields() throws URISyntaxException {
             idUrlWithInstance = idUrl.replace(new URI(idUrl).getHost(), new URI(instanceUrl).getHost());

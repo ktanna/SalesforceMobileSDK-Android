@@ -26,7 +26,6 @@
  */
 package com.salesforce.androidsdk.rest;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Arrays;
@@ -39,6 +38,7 @@ import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AccountManagerCallback;
 import android.accounts.AccountManagerFuture;
+import android.app.Application;
 import android.app.Instrumentation;
 import android.content.Context;
 import android.os.Bundle;
@@ -46,9 +46,8 @@ import android.test.InstrumentationTestCase;
 
 import com.salesforce.androidsdk.TestCredentials;
 import com.salesforce.androidsdk.TestForceApp;
-import com.salesforce.androidsdk.app.ForceApp;
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.auth.AuthenticatorService;
-import com.salesforce.androidsdk.auth.HttpAccess;
 import com.salesforce.androidsdk.rest.ClientManager.AccountInfoNotFoundException;
 import com.salesforce.androidsdk.rest.ClientManager.LoginOptions;
 import com.salesforce.androidsdk.rest.ClientManager.RestClientCallback;
@@ -59,21 +58,23 @@ import com.salesforce.androidsdk.util.EventsObservable.EventType;
 public class ClientManagerTest extends InstrumentationTestCase {
 
     public static final String TEST_PASSCODE_HASH = Encryptor.hash("passcode", "hash-key");
-    private static final String TEST_ORG_ID = "test_org_id";
-    private static final String TEST_USER_ID = "test_user_id";
-    private static final String TEST_ACCOUNT_NAME = "test_accountname";
-    private static final String TEST_USERNAME = "test_username";
-    private static final String TEST_CLIENT_ID = "test_client_d";
-    private static final String TEST_LOGIN_URL = "https://test.salesforce.com";
-    private static final String TEST_INSTANCE_URL = "https://tapp0.salesforce.com";
-    private static final String TEST_IDENTITY_URL = "https://test.salesforce.com";
-    private static final String TEST_AUTH_TOKEN = "test_auth_token";
-    private static final String TEST_REFRESH_TOKEN = "test_refresh_token";
-    private static final String TEST_OTHER_ACCOUNT_NAME = "test_other_accountname";
-    private static final String TEST_OTHER_USERNAME = "test_other_username";
-    private static final String TEST_ACCOUNT_TYPE = "com.salesforce.androisdk.test"; // must match authenticator.xml in SalesforceSDK project
-    private static final String[] TEST_SCOPES = new String[] {"web"};
-    private static final String TEST_CALLBACK_URL = "test://callback";
+    public static final String TEST_ORG_ID = "test_org_id";
+    public static final String TEST_USER_ID = "test_user_id";
+    public static final String TEST_ORG_ID_2 = "test_org_id_2";
+    public static final String TEST_USER_ID_2 = "test_user_id_2";
+    public static final String TEST_ACCOUNT_NAME = "test_accountname";
+    public static final String TEST_USERNAME = "test_username";
+    public static final String TEST_CLIENT_ID = "test_client_d";
+    public static final String TEST_LOGIN_URL = "https://test.salesforce.com";
+    public static final String TEST_INSTANCE_URL = "https://cs1.salesforce.com";
+    public static final String TEST_IDENTITY_URL = "https://test.salesforce.com";
+    public static final String TEST_AUTH_TOKEN = "test_auth_token";
+    public static final String TEST_REFRESH_TOKEN = "test_refresh_token";
+    public static final String TEST_OTHER_ACCOUNT_NAME = "test_other_accountname";
+    public static final String TEST_OTHER_USERNAME = "test_other_username";
+    public static final String TEST_ACCOUNT_TYPE = "com.salesforce.androidsdk.salesforcesdktest.login"; // must match authenticator.xml in SalesforceSDK project
+    public static final String[] TEST_SCOPES = new String[] {"web"};
+    public static final String TEST_CALLBACK_URL = "test://callback";
 
     private Context targetContext;
     private ClientManager clientManager;
@@ -84,29 +85,30 @@ public class ClientManagerTest extends InstrumentationTestCase {
     @Override
     public void setUp() throws Exception {
         super.setUp();
-        TestCredentials.init(getInstrumentation().getContext());
         targetContext = getInstrumentation().getTargetContext();
-        loginOptions = new LoginOptions(TEST_LOGIN_URL, TEST_PASSCODE_HASH, TEST_CALLBACK_URL, TEST_CLIENT_ID, TEST_SCOPES);
-        clientManager = new ClientManager(targetContext, TEST_ACCOUNT_TYPE, loginOptions, true);
+        final Application app = Instrumentation.newApplication(TestForceApp.class, targetContext);
+        getInstrumentation().callApplicationOnCreate(app);
+        TestCredentials.init(getInstrumentation().getContext());
+        loginOptions = new LoginOptions(TEST_LOGIN_URL, TEST_PASSCODE_HASH,
+        		TEST_CALLBACK_URL, TEST_CLIENT_ID, TEST_SCOPES);
+        clientManager = new ClientManager(targetContext, TEST_ACCOUNT_TYPE,
+        		loginOptions, true);
         accountManager = clientManager.getAccountManager();
         eq = new EventsListenerQueue();
-
-        // Wait for app initialization to complete.
-        Instrumentation.newApplication(TestForceApp.class, targetContext);
-        if (ForceApp.APP == null) {
+        if (SalesforceSDKManager.getInstance() == null) {
             eq.waitForEvent(EventType.AppCreateComplete, 5000);
         }
+        SalesforceSDKManager.getInstance().getPasscodeManager().setPasscodeHash(ClientManagerTest.TEST_PASSCODE_HASH);
     }
 
     @Override
     public void tearDown() throws Exception {
-        cleanupAccounts();
-        assertNoAccounts();
         if (eq != null) {
             eq.tearDown();
             eq = null;
         }
-        ForceApp.APP = null;
+        cleanupAccounts();
+        assertNoAccounts();
         super.tearDown();
     }
 
@@ -114,7 +116,8 @@ public class ClientManagerTest extends InstrumentationTestCase {
      * Test getAccountType
      */
     public void testGetAccountType() {
-        assertEquals("Wrong account type", TEST_ACCOUNT_TYPE, clientManager.getAccountType());
+        assertEquals("Wrong account type", TEST_ACCOUNT_TYPE,
+        		clientManager.getAccountType());
     }
 
     /**
@@ -128,7 +131,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
         createTestAccount();
 
         // Check that the account did get created
-        Account[] accounts = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accounts = clientManager.getAccounts();
         assertEquals("One account should have been returned", 1, accounts.length);
         assertEquals("Wrong account name", TEST_ACCOUNT_NAME, accounts[0].name);
         assertEquals("Wrong account type", TEST_ACCOUNT_TYPE, accounts[0].type);
@@ -151,21 +154,20 @@ public class ClientManagerTest extends InstrumentationTestCase {
         assertEquals("Wrong account type", TEST_ACCOUNT_TYPE, account.type);
 
         String encryptedAuthToken = accountManager.getUserData(account, AccountManager.KEY_AUTHTOKEN);
-        String decryptedAuthToken = ForceApp.decryptWithPasscode(encryptedAuthToken, TEST_PASSCODE_HASH);
+        String decryptedAuthToken = SalesforceSDKManager.decryptWithPasscode(encryptedAuthToken, TEST_PASSCODE_HASH);
         assertEquals("Wrong auth token", TEST_AUTH_TOKEN, decryptedAuthToken);
 
         String encryptedRefreshToken = accountManager.getPassword(account);
-        String decryptedRefreshToken = ForceApp.decryptWithPasscode(encryptedRefreshToken, TEST_PASSCODE_HASH);
+        String decryptedRefreshToken = SalesforceSDKManager.decryptWithPasscode(encryptedRefreshToken, TEST_PASSCODE_HASH);
         assertEquals("Wrong refresh token", TEST_REFRESH_TOKEN, decryptedRefreshToken);
 
-        assertEquals("Wrong instance url", TEST_INSTANCE_URL, ForceApp.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_INSTANCE_URL), TEST_PASSCODE_HASH));
-        assertEquals("Wrong login url", TEST_LOGIN_URL, ForceApp.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_LOGIN_URL), TEST_PASSCODE_HASH));
-        assertEquals("Wrong client id", TEST_CLIENT_ID, ForceApp.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_CLIENT_ID), TEST_PASSCODE_HASH));
-        assertEquals("Wrong user id", TEST_USER_ID, ForceApp.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_USER_ID), TEST_PASSCODE_HASH));
-        assertEquals("Wrong org id", TEST_ORG_ID, ForceApp.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_ORG_ID), TEST_PASSCODE_HASH));
-        assertEquals("Wrong username", TEST_USERNAME, ForceApp.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_USERNAME), TEST_PASSCODE_HASH));
+        assertEquals("Wrong instance url", TEST_INSTANCE_URL, SalesforceSDKManager.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_INSTANCE_URL), TEST_PASSCODE_HASH));
+        assertEquals("Wrong login url", TEST_LOGIN_URL, SalesforceSDKManager.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_LOGIN_URL), TEST_PASSCODE_HASH));
+        assertEquals("Wrong client id", TEST_CLIENT_ID, SalesforceSDKManager.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_CLIENT_ID), TEST_PASSCODE_HASH));
+        assertEquals("Wrong user id", TEST_USER_ID, SalesforceSDKManager.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_USER_ID), TEST_PASSCODE_HASH));
+        assertEquals("Wrong org id", TEST_ORG_ID, SalesforceSDKManager.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_ORG_ID), TEST_PASSCODE_HASH));
+        assertEquals("Wrong username", TEST_USERNAME, SalesforceSDKManager.decryptWithPasscode(accountManager.getUserData(account, AuthenticatorService.KEY_USERNAME), TEST_PASSCODE_HASH));
     }
-
 
     /**
      * Test getAccounts - when there is only one
@@ -188,7 +190,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
     /**
      * Test getAccounts - when there are several accounts
      */
-    public void testGetAccountsWithSeveralAccount() {
+    public void testGetAccountsWithSeveralAccounts() {
         // Make sure we have no accounts initially
         assertNoAccounts();
 
@@ -222,7 +224,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
         createOtherTestAccount();
 
         // Check that the accounts did get created
-        Account[] accounts = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accounts = clientManager.getAccounts();
         assertEquals("Two accounts should have been returned", 2, accounts.length);
 
         // Get the first one by name
@@ -250,7 +252,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
         createTestAccount();
 
         // Check that the account did get created
-        Account[] accounts = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accounts = clientManager.getAccounts();
         assertEquals("One account should have been returned", 1, accounts.length);
         assertEquals("Wrong account name", TEST_ACCOUNT_NAME, accounts[0].name);
 
@@ -264,7 +266,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
     /**
      * Test removeAccounts - removing one account where there are several
      */
-    public void testRemoveOneOfSeveralAccount() {
+    public void testRemoveOneOfSeveralAccounts() {
         // Make sure we have no accounts initially
         assertNoAccounts();
 
@@ -273,14 +275,14 @@ public class ClientManagerTest extends InstrumentationTestCase {
         createOtherTestAccount();
 
         // Check that the accounts did get created
-        Account[] accounts = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accounts = clientManager.getAccounts();
         assertEquals("Two accounts should have been returned", 2, accounts.length);
 
         // Remove one of them
         clientManager.removeAccounts(new Account[] {accounts[0]});
 
         // Make sure the other account is still there
-        Account[] accountsLeft = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accountsLeft = clientManager.getAccounts();
         assertEquals("One account should have been returned", 1, accountsLeft.length);
         assertEquals("Wrong account name", accounts[1].name, accountsLeft[0].name);
     }
@@ -297,7 +299,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
         createOtherTestAccount();
 
         // Check that the accounts did get created
-        Account[] accounts = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accounts = clientManager.getAccounts();
         assertEquals("Two accounts should have been returned", 2, accounts.length);
 
         // Remove one of them
@@ -357,7 +359,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
         // Create account
         createTestAccount();
 
-        // Call getkRestClient - expect restClient
+        // Call getRestClient - expect restClient
         final BlockingQueue<RestClient> q = new ArrayBlockingQueue<RestClient>(1);
         clientManager.getRestClient(null, new RestClientCallback() {
             @Override
@@ -368,7 +370,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
 
         // Wait for getRestClient to complete
         try {
-            RestClient restClient = q.poll(5L, TimeUnit.SECONDS);
+            RestClient restClient = q.poll(10L, TimeUnit.SECONDS);
             assertNotNull("RestClient expected", restClient);
             assertEquals("Wrong authToken", TEST_AUTH_TOKEN, restClient.getAuthToken());
             assertEquals("Wrong instance Url", new URI(TEST_INSTANCE_URL), restClient.getClientInfo().instanceUrl);
@@ -388,12 +390,12 @@ public class ClientManagerTest extends InstrumentationTestCase {
         createTestAccount();
 
         // Check that the accounts did get created
-        Account[] accounts = accountManager.getAccountsByType(TEST_ACCOUNT_TYPE);
+        Account[] accounts = clientManager.getAccounts();
         assertEquals("Two accounts should have been returned", 1, accounts.length);
 
         // Call removeAccountAsync
         final BlockingQueue<AccountManagerFuture<Boolean>> q = new ArrayBlockingQueue<AccountManagerFuture<Boolean>>(1);
-        clientManager.removeAccountAsync(new AccountManagerCallback<Boolean>() {
+        clientManager.removeAccountAsync(clientManager.getAccount(), new AccountManagerCallback<Boolean>() {
 
             @Override
             public void run(AccountManagerFuture<Boolean> future) {
@@ -403,7 +405,7 @@ public class ClientManagerTest extends InstrumentationTestCase {
 
         // Wait for removeAccountAsync to complete
         try {
-            AccountManagerFuture<Boolean> f = q.poll(5L, TimeUnit.SECONDS);
+            AccountManagerFuture<Boolean> f = q.poll(10L, TimeUnit.SECONDS);
             assertNotNull("AccountManagerFuture expected", f);
             assertTrue("Removal should have returned true", f.getResult());
 
@@ -413,38 +415,6 @@ public class ClientManagerTest extends InstrumentationTestCase {
         } catch (InterruptedException e) {
             fail("removeAccountAsync did not return after 5s");
         }
-    }
-
-    /**
-     * Test fetch new auth token flow
-     * We are creating a real account (using real client id/refresh token etc from TestCredentials)
-     * @throws AccountInfoNotFoundException
-     * @throws IOException
-     *
-     */
-    public void _testFetchNewAuthToken() throws AccountInfoNotFoundException, IOException {
-        // Make sure we have no accounts initially
-        assertNoAccounts();
-
-        String badToken = "bad token";
-
-        // Create real account
-        clientManager.createNewAccount(TestCredentials.ACCOUNT_NAME, TestCredentials.USERNAME,
-                TestCredentials.REFRESH_TOKEN, badToken, TestCredentials.INSTANCE_URL,
-                TEST_LOGIN_URL, TEST_IDENTITY_URL, TestCredentials.CLIENT_ID, TestCredentials.ORG_ID,
-                TestCredentials.USER_ID, TEST_PASSCODE_HASH);
-
-        // Peek rest client
-        RestClient restClient = clientManager.peekRestClient();
-        restClient.setHttpAccessor(new HttpAccess(null, "dummy-agent")); // clientManager initializes the client with HttpAccess.DEFAULT -- but that's null without an app
-
-        // Check the client
-        assertEquals("RestClient should be using authToken from account", badToken, restClient.getAuthToken());
-
-        // Try a call - it should succeed and client should end up with a new auth token
-        RestResponse response = restClient.sendSync(RestRequest.getRequestForResources(TestCredentials.API_VERSION));
-        assertFalse("RestClient should now be using a new token", badToken.equals(restClient.getAuthToken()));
-        assertTrue("Call should have succeeded", response.isSuccess());
     }
 
     /**
@@ -478,6 +448,6 @@ public class ClientManagerTest extends InstrumentationTestCase {
     private Bundle createOtherTestAccount() {
         return clientManager.createNewAccount(TEST_OTHER_ACCOUNT_NAME, TEST_OTHER_USERNAME,
                 TEST_REFRESH_TOKEN, TEST_AUTH_TOKEN, TEST_INSTANCE_URL, TEST_LOGIN_URL,
-                TEST_IDENTITY_URL, TEST_CLIENT_ID, TEST_ORG_ID, TEST_USER_ID, TEST_PASSCODE_HASH);
+                TEST_IDENTITY_URL, TEST_CLIENT_ID, TEST_ORG_ID_2, TEST_USER_ID_2, TEST_PASSCODE_HASH);
     }
 }
