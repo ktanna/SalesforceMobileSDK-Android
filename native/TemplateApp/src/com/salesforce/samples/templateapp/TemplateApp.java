@@ -26,24 +26,26 @@
  */
 package com.salesforce.samples.templateapp;
 
-import android.app.Activity;
+import android.app.Application;
 
-import com.salesforce.androidsdk.app.ForceApp;
-import com.salesforce.androidsdk.security.Encryptor;
-
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
 
 /**
- * Application class for our application
+ * Application class for our application.
  */
-public class TemplateApp extends ForceApp {
+public class TemplateApp extends Application {
 
 	@Override
-	public Class<? extends Activity> getMainActivityClass() {
-		return MainActivity.class;
-	}
-	
-	@Override
-	protected String getKey(String name) {
-		return Encryptor.hash(name + "x;lksalk1jsadihh23lia;lsdhasd2", name + "112;kaslkxs0-12;skcxn1203ph");
+	public void onCreate() {
+		super.onCreate();
+		SalesforceSDKManager.initNative(getApplicationContext(), new KeyImpl(), MainActivity.class);
+
+		/*
+		 * Un-comment the line below to enable push notifications in this app.
+		 * Replace 'pnInterface' with your implementation of 'PushNotificationInterface'.
+		 * Add your Google package ID in 'bootonfig.xml', as the value
+		 * for the key 'androidPushNotificationClientId'.
+		 */
+		// SalesforceSDKManager.getInstance().setPushNotificationReceiver(pnInterface);
 	}
 }

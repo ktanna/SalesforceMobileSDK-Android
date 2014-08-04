@@ -42,22 +42,24 @@ import org.apache.http.message.BasicHttpResponse;
 import org.apache.http.message.BasicStatusLine;
 import org.apache.http.util.EntityUtils;
 
-import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.Application;
-import android.app.Instrumentation.ActivityMonitor;
 import android.content.Context;
-import android.content.IntentFilter;
+import android.test.ActivityInstrumentationTestCase2;
+import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.RadioButton;
 import android.widget.TabHost;
 import android.widget.TextView;
 
-import com.salesforce.androidsdk.app.ForceApp;
+import com.salesforce.androidsdk.accounts.UserAccount;
+import com.salesforce.androidsdk.accounts.UserAccountManager;
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.auth.HttpAccess;
+import com.salesforce.androidsdk.rest.ApiVersionStrings;
 import com.salesforce.androidsdk.rest.ClientManager;
-import com.salesforce.androidsdk.ui.LoginActivity;
-import com.salesforce.androidsdk.util.BaseActivityInstrumentationTestCase;
 import com.salesforce.androidsdk.util.EventsListenerQueue;
+import com.salesforce.androidsdk.util.EventsObservable.EventType;
 
 /**
  * Tests for ExplorerActivity
@@ -67,7 +69,7 @@ import com.salesforce.androidsdk.util.EventsListenerQueue;
  *     and make sure that the http requests coming through are as expected (method/path/body)
  */
 public class ExplorerActivityTest extends
-        BaseActivityInstrumentationTestCase<ExplorerActivity> {
+        ActivityInstrumentationTestCase2<ExplorerActivity> {
 
     private static final String TEST_ORG_ID = "test_org_id";
     private static final String TEST_USER_ID = "test_user_id";
@@ -79,7 +81,6 @@ public class ExplorerActivityTest extends
     private static final String TEST_REFRESH_TOKEN = "test_refresh_token";
     private static final String TEST_USERNAME = "test_username";
     private static final String TEST_ACCOUNT_NAME = "test_account_name";
-
 
     private static final int VERSIONS_TAB = 0;
     private static final int RESOURCES_TAB = 1;
@@ -95,27 +96,41 @@ public class ExplorerActivityTest extends
     private static final int SEARCH_TAB = 11;
     private static final int MANUAL_REQUEST_TAB = 12;
 
+    private EventsListenerQueue eq;
     private Context targetContext;
     private ClientManager clientManager;
     private MockHttpAccess mockHttpAccessor;
-    EventsListenerQueue eq;
-
 
     public ExplorerActivityTest() {
-        super("com.salesforce.samples.restexplorer", ExplorerActivity.class);
+        super(ExplorerActivity.class);
     }
 
     @Override
     public void setUp() throws Exception {
         super.setUp();
         setActivityInitialTouchMode(false);
+        eq = new EventsListenerQueue();
+
+        // Waits for app initialization to complete.
+        if (SalesforceSDKManager.getInstance() == null) {
+            eq.waitForEvent(EventType.AppCreateComplete, 5000);
+        }
         targetContext = getInstrumentation().getTargetContext();
-        clientManager = new ClientManager(targetContext, targetContext.getString(R.string.account_type), null, ForceApp.APP.shouldLogoutWhenTokenRevoked());
+        clientManager = new ClientManager(targetContext, targetContext.getString(R.string.account_type), null, SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked());
         clientManager.createNewAccount(TEST_ACCOUNT_NAME, TEST_USERNAME, TEST_REFRESH_TOKEN,
                 TEST_ACCESS_TOKEN, TEST_INSTANCE_URL, TEST_LOGIN_URL, TEST_IDENTITY_URL, TEST_CLIENT_ID, TEST_ORG_ID, TEST_USER_ID, null);
-        mockHttpAccessor = new MockHttpAccess(RestExplorerApp.APP);
-        ForceApp.APP.getPasscodeManager().setTimeoutMs(0 /* disabled */);
+        mockHttpAccessor = new MockHttpAccess(SalesforceSDKManager.getInstance().getAppContext());
+        SalesforceSDKManager.getInstance().getPasscodeManager().setTimeoutMs(0 /* disabled */);
     }
+
+	@Override
+	public void tearDown() throws Exception {
+		if (eq != null) {
+            eq.tearDown();
+            eq = null;
+        }
+		super.tearDown();
+	}
 
     /**
      * Test clicking clear.
@@ -137,7 +152,7 @@ public class ExplorerActivityTest extends
     /**
      * Test clicking logout and then canceling out.
      */
-    public void _testClickLogoutThenCancel() {
+    public void testClickLogoutThenCancel() {
         // Click on logout
         clickView(getActivity().findViewById(R.id.logout_button));
 
@@ -155,27 +170,25 @@ public class ExplorerActivityTest extends
     }
 
     /**
-     * Test clicking logout and then clicking yes - make sure we end up in login screen.
-     *
-     * FIXME after logout subsequent tests fail
+     * Test clicking logout and then clicking yes - make sure we end up removing
+     * the account.
      */
-    public void _testClickLogoutThenConfirm() {
+    public void testClickLogoutThenConfirm() {
         // Click on logout
         clickView(getActivity().findViewById(R.id.logout_button));
 
         // Check that confirmation dialog is shown
         assertTrue("Logout confirmation dialog showing", getActivity().logoutConfirmationDialog.isShowing());
-
-        // Setup activity monitor
-        ActivityMonitor monitor = getInstrumentation().addMonitor(new IntentFilter(LoginActivity.class.getName()), null, false);
+        final UserAccountManager userAccMgr = SalesforceSDKManager.getInstance().getUserAccountManager();
+        UserAccount curUser = userAccMgr.getCurrentUser();
+        assertNotNull("Current user should not be null", curUser);
 
         // Click yes
         clickView(getActivity().logoutConfirmationDialog.getButton(AlertDialog.BUTTON_POSITIVE));
-
-        // Wait for login screen
-        Activity loginActivity = monitor.waitForActivityWithTimeout(10000);
-        assertTrue("Login should have been launched", loginActivity instanceof LoginActivity);
-        loginActivity.finish();
+        final EventsListenerQueue eq = new EventsListenerQueue();
+        eq.waitForEvent(EventType.LogoutComplete, 30000);
+        curUser = userAccMgr.getCurrentUser();
+        assertNull("Current user should be null", curUser);
     }
 
     /**
@@ -189,14 +202,14 @@ public class ExplorerActivityTest extends
      * Test going to resources tab - check UI and click get resources.
      */
     public void testGetResources() {
-        gotoTabAndRunAction(RESOURCES_TAB, R.id.resources_button, "Get Resources", null, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/]");
+        gotoTabAndRunAction(RESOURCES_TAB, R.id.resources_button, "Get Resources", null, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/]");
     }
 
     /**
      * Test going to describe global tab - check UI and click describe global.
      */
     public void testDescribeGlobal() {
-        gotoTabAndRunAction(DESCRIBE_GLOBAL_TAB, R.id.describe_global_button, "Describe Global", null, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/]");
+        gotoTabAndRunAction(DESCRIBE_GLOBAL_TAB, R.id.describe_global_button, "Describe Global", null, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/]");
     }
 
     /**
@@ -209,7 +222,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.metadata_object_type_text, "objTypeMetadata");
             }
         };
-        gotoTabAndRunAction(METADATA_TAB, R.id.metadata_button, "Get Metadata", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeMetadata/]");
+        gotoTabAndRunAction(METADATA_TAB, R.id.metadata_button, "Get Metadata", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeMetadata/]");
     }
 
     /**
@@ -222,7 +235,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.describe_object_type_text, "objTypeDescribe");
             }
         };
-        gotoTabAndRunAction(DESCRIBE_TAB, R.id.describe_button, "Describe", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeDescribe/describe/]");
+        gotoTabAndRunAction(DESCRIBE_TAB, R.id.describe_button, "Describe", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeDescribe/describe/]");
     }
 
     /**
@@ -236,7 +249,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.create_fields_text, "{\"field1\":\"create1\",\"field2\":\"create2\"}");
             }
         };
-        gotoTabAndRunAction(CREATE_TAB, R.id.create_button, "Create", extraSetup, "[POST " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeCreate {\"field1\":\"create1\",\"field2\":\"create2\"}]");
+        gotoTabAndRunAction(CREATE_TAB, R.id.create_button, "Create", extraSetup, "[POST " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeCreate {\"field1\":\"create1\",\"field2\":\"create2\"}]");
     }
 
     /**
@@ -251,7 +264,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.retrieve_field_list_text, "field1,field2");
             }
         };
-        gotoTabAndRunAction(RETRIEVE_TAB, R.id.retrieve_button, "Retrieve", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeRetrieve/objIdRetrieve?fields=field1%2Cfield2]");
+        gotoTabAndRunAction(RETRIEVE_TAB, R.id.retrieve_button, "Retrieve", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeRetrieve/objIdRetrieve?fields=field1%2Cfield2]");
     }
 
 
@@ -267,7 +280,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.update_fields_text, "{\"field1\":\"update1\",\"field2\":\"update2\"}");
             }
         };
-        gotoTabAndRunAction(UPDATE_TAB, R.id.update_button, "Update", extraSetup, "[PATCH " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeUpdate/objIdUpdate {\"field1\":\"update1\",\"field2\":\"update2\"}]");
+        gotoTabAndRunAction(UPDATE_TAB, R.id.update_button, "Update", extraSetup, "[PATCH " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeUpdate/objIdUpdate {\"field1\":\"update1\",\"field2\":\"update2\"}]");
     }
 
     /**
@@ -283,7 +296,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.upsert_fields_text, "{\"field1\":\"upsert1\",\"field2\":\"upsert2\"}");
             }
         };
-        gotoTabAndRunAction(UPSERT_TAB, R.id.upsert_button, "Upsert", extraSetup, "[PATCH " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeUpsert/extIdField/extId {\"field1\":\"upsert1\",\"field2\":\"upsert2\"}]");
+        gotoTabAndRunAction(UPSERT_TAB, R.id.upsert_button, "Upsert", extraSetup, "[PATCH " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeUpsert/extIdField/extId {\"field1\":\"upsert1\",\"field2\":\"upsert2\"}]");
     }
 
     /**
@@ -297,7 +310,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.delete_object_id_text, "objIdDelete");
             }
         };
-        gotoTabAndRunAction(DELETE_TAB, R.id.delete_button, "Delete", extraSetup, "[DELETE " + TEST_INSTANCE_URL + "/services/data/v23.0/sobjects/objTypeDelete/objIdDelete]");
+        gotoTabAndRunAction(DELETE_TAB, R.id.delete_button, "Delete", extraSetup, "[DELETE " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/sobjects/objTypeDelete/objIdDelete]");
     }
 
 
@@ -311,7 +324,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.query_soql_text, "fake query");
             }
         };
-        gotoTabAndRunAction(QUERY_TAB, R.id.query_button, "Query", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/query?q=fake+query]");
+        gotoTabAndRunAction(QUERY_TAB, R.id.query_button, "Query", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/query?q=fake+query]");
     }
 
 
@@ -325,7 +338,7 @@ public class ExplorerActivityTest extends
                 setText(R.id.search_sosl_text, "fake search");
             }
         };
-        gotoTabAndRunAction(SEARCH_TAB, R.id.search_button, "Search", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/v23.0/search?q=fake+search]");
+        gotoTabAndRunAction(SEARCH_TAB, R.id.search_button, "Search", extraSetup, "[GET " + TEST_INSTANCE_URL + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/search?q=fake+search]");
     }
 
 
@@ -397,7 +410,7 @@ public class ExplorerActivityTest extends
      * Mock http access
      */
     private static class MockHttpAccess extends HttpAccess {
-        protected MockHttpAccess(Application app) {
+        protected MockHttpAccess(Context app) {
             super(app, null);
         }
 
@@ -413,6 +426,75 @@ public class ExplorerActivityTest extends
             q.add(mockResponse);
             res.setEntity(new StringEntity(mockResponse));
             return new Execution(req, res);
+        }
+    }
+
+    private void setText(final int textViewId, final String text) {
+        try {
+            runTestOnUiThread(new Runnable() {
+                @Override public void run() {
+                    TextView v = (TextView) getActivity().findViewById(textViewId);
+                    v.setText(text);
+                    if (v instanceof EditText)
+                        ((EditText) v).setSelection(v.getText().length());
+                }
+            });
+        } catch (Throwable t) {
+            fail("Failed to set text " + text);
+        }
+    }
+
+    private void waitForRender() {
+        eq.waitForEvent(EventType.RenditionComplete, 5000);
+    }
+
+    private void clickTab(final TabHost tabHost, final int tabIndex) {
+        try {
+            runTestOnUiThread(new Runnable() {
+
+                @Override
+                public void run() {
+                    tabHost.setCurrentTab(tabIndex);
+                } 
+            });
+        } catch (Throwable t) {
+            fail("Failed to click tab " + tabIndex);
+        }
+    }
+
+    private void waitSome() {
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            fail("Test interrupted");
+        }
+    }
+
+    private void clickView(final View v) {
+        try {
+            runTestOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    v.performClick();
+                }
+            });
+        } catch (Throwable t) {
+            fail("Failed to click view " + v);
+        }
+    }
+
+    private void checkRadioButton(final int radioButtonId) {
+        try {
+            runTestOnUiThread(new Runnable() {
+
+                @Override
+                public void run() {
+                    RadioButton v = (RadioButton) getActivity().findViewById(radioButtonId);
+                    v.setChecked(true);
+                }
+            });
+        } catch (Throwable t) {
+            fail("Failed to check radio button " + radioButtonId);
         }
     }
 }

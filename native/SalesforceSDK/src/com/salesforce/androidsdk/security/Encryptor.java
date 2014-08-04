@@ -29,6 +29,7 @@ package com.salesforce.androidsdk.security;
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
 import java.security.SecureRandom;
 
 import javax.crypto.BadPaddingException;
@@ -39,6 +40,7 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import android.annotation.TargetApi;
 import android.app.Service;
 import android.app.admin.DevicePolicyManager;
 import android.content.Context;
@@ -63,6 +65,7 @@ public class Encryptor {
      * @return true if the cryptographic module was successfully initialized
      * @throws GeneralSecurityException
      */
+    @TargetApi(Build.VERSION_CODES.HONEYCOMB)
     public static boolean init(Context ctx) {
         // Check if file system encryption is available and active
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.HONEYCOMB) {
@@ -84,7 +87,7 @@ public class Encryptor {
             return false;
         }
         try {
-            Mac.getInstance(MAC_TRANSFORMATION);
+            Mac.getInstance(MAC_TRANSFORMATION, "BC");
         } catch (GeneralSecurityException e) {
             Log.e(TAG, "No mac transformation available");
             return false;
@@ -95,10 +98,10 @@ public class Encryptor {
     public static Cipher getBestCipher() throws GeneralSecurityException {
         Cipher cipher = null;
         if (null != bestCipherAvailable) {
-            return Cipher.getInstance(bestCipherAvailable);
+            return Cipher.getInstance(bestCipherAvailable, "BC");
         }
         try {
-            cipher = Cipher.getInstance(PREFER_CIPHER_TRANSFORMATION);
+            cipher = Cipher.getInstance(PREFER_CIPHER_TRANSFORMATION, "BC");
             if (null != cipher)
                 bestCipherAvailable = PREFER_CIPHER_TRANSFORMATION;
         } catch (GeneralSecurityException gex1) {
@@ -193,29 +196,47 @@ public class Encryptor {
             // Sign with sha256
             byte [] keyBytes = key.getBytes(UTF8);
             byte [] dataBytes = data.getBytes(UTF8);
-
-            Mac sha = Mac.getInstance(MAC_TRANSFORMATION);
+            Mac sha = Mac.getInstance(MAC_TRANSFORMATION, "BC");
             SecretKeySpec keySpec = new SecretKeySpec(keyBytes, sha.getAlgorithm());
             sha.init(keySpec);
             byte [] sig = sha.doFinal(dataBytes);
 
-            // Encode with bas64
-            return Base64.encodeToString(sig, Base64.DEFAULT);
+            // Encode with base64.
+            String hash = Base64.encodeToString(sig, Base64.DEFAULT);
 
+            /*
+             * Android 4.3 has a bug where a newline character is appended
+             * at the end of the base64 encoded string. We remove this newline
+             * character to prevent a mismatch between the stored hash
+             * and computed hash.
+             */
+            hash = removeNewLine(hash);
+            return hash;
         } catch (Exception ex) {
             Log.w("Encryptor:hash", "error during hashing", ex);
             return null;
         }
     }
 
+    /**
+     * Removes a trailing newline character from the hash.
+     *
+     * @param hash Hash.
+     * @return Hash with trailing newline character removed.
+     */
+    public static String removeNewLine(String hash) {
+        if (hash != null && hash.endsWith("\n")) {
+            return hash.substring(0, hash.lastIndexOf("\n"));
+        }
+        return hash;
+    }
 
-    private static byte[] generateInitVector() throws NoSuchAlgorithmException {
+    private static byte[] generateInitVector() throws NoSuchAlgorithmException, NoSuchProviderException {
         SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
         byte[] iv = new byte[16];
         random.nextBytes(iv);
         return iv;
     }
-
 
     /**
      * Encrypt data bytes using key

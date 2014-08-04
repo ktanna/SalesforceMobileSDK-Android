@@ -1,24 +1,16 @@
-## Hybrid 1.4.7 to 1.5 upgrade
-- Update your Mobile SDK plugins and artifacts:
-    - `SFHybridApp.js`
-    - `SFSmartStorePlugin.js`
-    - `SFTestRunnerPlugin.js`
-    - `SalesforceOAuthPlugin.js`
-    - `bootstrap.html` (The only change is the cordova.js reference)
-- Cordova: Update your cordova.js to `cordova-2.3.0.js`
-- Cordova: `plugins.xml` has changed to `config.xml`
+## Upgrade steps from v2.1.x to v2.2.0 for native and hybrid apps
+- Replace the existing `SalesforceSDK` project in Eclipse with the Mobile SDK 2.2.0 `SalesforceSDK` project.
+- If your app uses `SmartStore`, replace the existing `SmartStore` project in Eclipse with the new `SmartStore` project.
+- Right click your project and select `Properties`.
+- Click the `Android` tab and navigate to the library project section at the bottom and replace the existing `SalesforceSDK` entry with the new `SalesforceSDK` project in your workspace.
+- If your app uses `SmartStore`, repeat the previous step for the `SmartStore` project.
 
-## Native 1.4.7 to 1.5 upgrade
-- Swap the existing `SalesforceSDK` project in Eclipse with the new `SalesforceSDK` project
-- Right click on your project and go to `Properties`
-- Click on the `Android` tab and replace the existing `SalesforceSDK` entry at the bottom (in the library project section) with the new `SalesforceSDK` project in your workspace
-- If all your activities extend `NativeMainActivity` then you do not need to perform any additional steps
-- If you have any activities that do not extend `NativeMainActivity` perform the following additional steps:
-	- Add the following line of code to your member variable declarations:
-		- `private TokenRevocationReceiver tokenRevocationReceiver;`
-	- Add the following line of code within the `onCreate` method:
-		- `tokenRevocationReceiver = new TokenRevocationReceiver(this);`
-	- Add the following line of code within the `onResume` method:
-		- `registerReceiver(tokenRevocationReceiver, new IntentFilter(ClientManager.ACCESS_TOKEN_REVOKE_INTENT));`
-	- Add the following line of code within the `onPause` method:
-		- `unregisterReceiver(tokenRevocationReceiver);`
+## Upgrade steps from v2.0.x to v2.1.0 for native and hybrid apps
+- Replace the existing `SalesforceSDK` project in Eclipse with the Mobile SDK 2.1.0 `SalesforceSDK` project.
+- If your app uses `SmartStore`, replace the existing `SmartStore` project in Eclipse with the new `SmartStore` project.
+- Right click your project and select `Properties`.
+- Click the `Android` tab and navigate to the library project section at the bottom and replace the existing `SalesforceSDK` entry with the new `SalesforceSDK` project in your workspace.
+- If your app uses `SmartStore`, repeat the previous step for the `SmartStore` project.
+- The Salesforce Mobile SDK Activity and Service declarations have now been moved from the app's `AndroidManifest.xml` file to the `AndroidManifest.xml` file of the `SalesforceSDK` project. These declarations are automatically merged into the app's manifest file if you enable the `manifestmerger` attribute. In order to use this, add `manifestmerger.enabled=true` to your app's `project.properties` file.
+	- NOTE:
+		- You are required to perform this step to use features that were added in Mobile SDK 2.1.0, such as push notifications.

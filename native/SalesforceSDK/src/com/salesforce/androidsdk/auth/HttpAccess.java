@@ -34,6 +34,7 @@ import java.util.Map;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
 import org.apache.http.client.methods.HttpGet;
@@ -43,7 +44,6 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.HttpEntityWrapper;
 
-import android.app.Application;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -63,8 +63,8 @@ import android.util.Log;
  */
 public class HttpAccess extends BroadcastReceiver {
 
-    // Reference to app
-    private Application app;
+    // Reference to the application context.
+    private Context app;
 
     // Http client
     private AndroidHttpClient http;
@@ -86,7 +86,7 @@ public class HttpAccess extends BroadcastReceiver {
      * Initialize HttpAccess.
      * Should be called from application
      */
-    public static void init(Application app, String userAgent) {
+    public static void init(Context app, String userAgent) {
         assert DEFAULT == null : "HttpAccess.init should be called once per process";
         DEFAULT = new HttpAccess(app, userAgent);
     }
@@ -96,13 +96,13 @@ public class HttpAccess extends BroadcastReceiver {
      * @param app Reference to the Application.
      * @param userAgent The user agent to be used with requests.
      */
-    public HttpAccess(Application app, String userAgent) {
+    public HttpAccess(Context app, String userAgent) {
         // Set user agent
         this.userAgent = userAgent;
         Log.d("HttpAccess:constructor", "User-Agent string: " + userAgent);
 
         // Using android http client
-        http = getHttpClient();
+        http = newHttpClient();
         ((AndroidHttpClient) http).enableCurlLogging("HttpAccess", Log.DEBUG);
 
         // Only null in tests
@@ -132,8 +132,15 @@ public class HttpAccess extends BroadcastReceiver {
      * Build the AndroidHttpClient.
      * @return A configured instance of AndroidHttpClient.
      */
-    private AndroidHttpClient getHttpClient() {
+    private AndroidHttpClient newHttpClient() {
         return AndroidHttpClient.newInstance(userAgent, app);
+    }
+    
+    /**
+     * @return underlying HttpClient 
+     */
+    public HttpClient getHttpclient() {
+    	return http;
     }
 
     /**
@@ -205,7 +212,7 @@ public class HttpAccess extends BroadcastReceiver {
             @Override
             public void run() {
                 http.close();
-                http = getHttpClient();
+                http = newHttpClient();
             }
         })).start();
     }

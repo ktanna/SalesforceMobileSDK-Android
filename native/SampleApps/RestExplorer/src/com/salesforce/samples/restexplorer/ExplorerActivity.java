@@ -49,6 +49,7 @@ import android.app.Dialog;
 import android.app.TabActivity;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
@@ -62,9 +63,9 @@ import android.widget.RadioGroup;
 import android.widget.TabHost;
 import android.widget.TextView;
 
-import com.salesforce.androidsdk.app.ForceApp;
+import com.salesforce.androidsdk.accounts.UserAccountManager;
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.rest.ClientManager;
-import com.salesforce.androidsdk.rest.ClientManager.LoginOptions;
 import com.salesforce.androidsdk.rest.ClientManager.RestClientCallback;
 import com.salesforce.androidsdk.rest.RestClient;
 import com.salesforce.androidsdk.rest.RestClient.AsyncRequestCallback;
@@ -73,8 +74,9 @@ import com.salesforce.androidsdk.rest.RestRequest.RestMethod;
 import com.salesforce.androidsdk.rest.RestResponse;
 import com.salesforce.androidsdk.security.PasscodeManager;
 import com.salesforce.androidsdk.util.EventsObservable;
-import com.salesforce.androidsdk.util.TokenRevocationReceiver;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
+import com.salesforce.androidsdk.util.TokenRevocationReceiver;
+import com.salesforce.androidsdk.util.UserSwitchReceiver;
 
 /**
  * Activity for explorer
@@ -91,6 +93,7 @@ public class ExplorerActivity extends TabActivity {
 	private TextView resultText;
 	AlertDialog logoutConfirmationDialog;
     private TokenRevocationReceiver tokenRevocationReceiver;
+    private UserSwitchReceiver userSwitchReceiver;
 
 	// Use for objectId fields auto-complete
 	private TreeSet<String> knownIds = new TreeSet<String>();
@@ -104,7 +107,7 @@ public class ExplorerActivity extends TabActivity {
 		super.onCreate(savedInstanceState);
 
 		// Passcode manager
-		passcodeManager = ForceApp.APP.getPasscodeManager();
+		passcodeManager = SalesforceSDKManager.getInstance().getPasscodeManager();
 		tokenRevocationReceiver = new TokenRevocationReceiver(this);
 		
 		// ApiVersion
@@ -134,8 +137,10 @@ public class ExplorerActivity extends TabActivity {
 		// Make result area scrollable
 		resultText = (TextView) findViewById(R.id.result_text);
 		resultText.setMovementMethod(new ScrollingMovementMethod());
+        userSwitchReceiver = new ExplorerUserSwitchReceiver();
+        registerReceiver(userSwitchReceiver, new IntentFilter(UserAccountManager.USER_SWITCH_INTENT_ACTION));
 	}
-	
+
 	@Override 
 	public void onResume() {
 		super.onResume();
@@ -147,20 +152,16 @@ public class ExplorerActivity extends TabActivity {
 		// Bring up passcode screen if needed
 		if (passcodeManager.onResume(this)) {
 			// Login options
-			String accountType = ForceApp.APP.getAccountType();
-	    	LoginOptions loginOptions = new LoginOptions(
-	    			null, // gets overridden by LoginActivity based on server picked by uuser 
-	    			ForceApp.APP.getPasscodeHash(),
-	    			getString(R.string.oauth_callback_url),
-	    			getString(R.string.oauth_client_id),
-	    			new String[] {"api"});
-			
+			String accountType = SalesforceSDKManager.getInstance().getAccountType();
+
 			// Get a rest client
-			new ClientManager(this, accountType, loginOptions, ForceApp.APP.shouldLogoutWhenTokenRevoked()).getRestClient(this, new RestClientCallback() {
+			new ClientManager(this, accountType, SalesforceSDKManager.getInstance().getLoginOptions(),
+					SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked()).getRestClient(this, new RestClientCallback() {
+
 				@Override
 				public void authenticatedRestClient(RestClient client) {
 					if (client == null) {
-						ForceApp.APP.logout(ExplorerActivity.this);
+						SalesforceSDKManager.getInstance().logout(ExplorerActivity.this);
 						return;
 					}
 					ExplorerActivity.this.client = client;
@@ -171,15 +172,20 @@ public class ExplorerActivity extends TabActivity {
 			});
 		}
 	}
-	
-	
+
     @Override
     public void onPause() {
     	super.onPause();
     	passcodeManager.onPause(this);
     	unregisterReceiver(tokenRevocationReceiver);
     }
-	
+
+    @Override
+    public void onDestroy() {
+    	unregisterReceiver(userSwitchReceiver);
+    	super.onDestroy();
+    }
+
 	@Override
 	public void onUserInteraction() {
 		passcodeManager.recordUserInteraction();
@@ -195,7 +201,7 @@ public class ExplorerActivity extends TabActivity {
 							@Override
 							public void onClick(DialogInterface dialog,
 									int which) {
-								ForceApp.APP.logout(ExplorerActivity.this);
+								SalesforceSDKManager.getInstance().logout(ExplorerActivity.this);
 							}
 						})
 				.setNegativeButton(R.string.logout_cancel, null)
@@ -242,6 +248,17 @@ public class ExplorerActivity extends TabActivity {
 	 */
 	public void onGetVersionsClick(View v) {
 		sendRequest(RestRequest.getRequestForVersions());
+	}
+
+	/**
+	 * Called when "Switch Account" button is clicked.
+	 *
+	 * @param v View that was clicked.
+	 */
+	public void onSwitchAccClick(View v) {
+		final Intent i = new Intent(this, SalesforceSDKManager.getInstance().getAccountSwitcherActivityClass());
+		i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+		this.startActivity(i);
 	}
 
 	/**
@@ -443,8 +460,11 @@ public class ExplorerActivity extends TabActivity {
 	public void onManualRequestClick(View v) {
 		RestRequest request = null;
 		try {
-			String path = ((EditText) findViewById(R.id.manual_request_path_text))
-					.getText().toString();
+			final EditText editText = (EditText) findViewById(R.id.manual_request_path_text);
+			final String hintText = String.format(getResources().getString(R.string.path_hint),
+					getResources().getString(R.string.api_version));
+			editText.setHint(hintText);
+			final String path = editText.getText().toString();
 			HttpEntity paramsEntity = getParamsEntity(R.id.manual_request_params_text);
 			RestMethod method = getMethod(R.id.manual_request_method_radiogroup);
 			request = new RestRequest(method, path, paramsEntity);
@@ -656,7 +676,7 @@ public class ExplorerActivity extends TabActivity {
 	 */
 	private void printInfo() {
 		printHeader("Info");
-		println(ForceApp.APP);
+		println(SalesforceSDKManager.getInstance());
 		println(client);
 	}
 
@@ -701,4 +721,39 @@ public class ExplorerActivity extends TabActivity {
 		}
 	}
 
+    /**
+     * Refreshes the client if the user has been switched.
+     */
+	private void refreshIfUserSwitched() {
+		if (passcodeManager.onResume(this)) {
+			final String accountType = SalesforceSDKManager.getInstance().getAccountType();
+
+			// Get a rest client
+			new ClientManager(this, accountType, SalesforceSDKManager.getInstance().getLoginOptions(),
+					SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked()).getRestClient(this, new RestClientCallback() {
+
+				@Override
+				public void authenticatedRestClient(RestClient client) {
+					if (client == null) {
+						SalesforceSDKManager.getInstance().logout(ExplorerActivity.this);
+						return;
+					}
+					ExplorerActivity.this.client = client;			
+				}
+			});
+		}
+	}
+
+    /**
+     * Acts on the user switch event.
+     *
+     * @author bhariharan
+     */
+    private class ExplorerUserSwitchReceiver extends UserSwitchReceiver {
+
+		@Override
+		protected void onUserSwitch() {
+			refreshIfUserSwitched();
+		}
+    }
 }
