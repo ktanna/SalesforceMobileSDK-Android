@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, salesforce.com, inc.
+ * Copyright (c) 2011-2015, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,22 +26,11 @@
  */
 package com.salesforce.androidsdk.rest;
 
-import java.io.File;
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.apache.http.HttpStatus;
-import org.json.JSONArray;
-import org.json.JSONObject;
-
+import android.os.Environment;
 import android.test.InstrumentationTestCase;
 
 import com.android.volley.Request;
+import com.google.common.io.CharStreams;
 import com.salesforce.androidsdk.TestCredentials;
 import com.salesforce.androidsdk.auth.HttpAccess;
 import com.salesforce.androidsdk.auth.OAuth2;
@@ -50,8 +39,28 @@ import com.salesforce.androidsdk.rest.RestClient.AuthTokenProvider;
 import com.salesforce.androidsdk.rest.RestClient.ClientInfo;
 import com.salesforce.androidsdk.rest.RestClient.WrappedRestRequest;
 import com.salesforce.androidsdk.rest.RestRequest.RestMethod;
-import com.salesforce.androidsdk.rest.files.FileRequests;
 
+import org.apache.http.HttpStatus;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 /**
  * Tests for RestClient
  *
@@ -68,6 +77,13 @@ public class RestClientTest extends InstrumentationTestCase {
     private HttpAccess httpAccess;
     private RestClient restClient;
     private String authToken;
+    private String instanceUrl;
+    public static final String TEST_FIRST_NAME = "firstName";
+    public static final String TEST_LAST_NAME = "lastName";
+    public static final String TEST_EMAIL = "test@email.com";
+    public static final String TEST_PHOTO_URL = "http://some.photo.url";
+    public static final String TEST_THUMBNAIL_URL = "http://some.thumbnail.url";
+
 
     @Override
     public void setUp() throws Exception {
@@ -76,12 +92,14 @@ public class RestClientTest extends InstrumentationTestCase {
         httpAccess = new HttpAccess(null, null);
         TokenEndpointResponse refreshResponse = OAuth2.refreshAuthToken(httpAccess, new URI(TestCredentials.INSTANCE_URL), TestCredentials.CLIENT_ID, TestCredentials.REFRESH_TOKEN);
         authToken = refreshResponse.authToken;
+        instanceUrl = refreshResponse.instanceUrl;
         clientInfo = new ClientInfo(TestCredentials.CLIENT_ID,
         		new URI(TestCredentials.INSTANCE_URL),
         		new URI(TestCredentials.LOGIN_URL),
         		new URI(TestCredentials.IDENTITY_URL),
         		TestCredentials.ACCOUNT_NAME, TestCredentials.USERNAME,
-        		TestCredentials.USER_ID, TestCredentials.ORG_ID, null, null);
+        		TestCredentials.USER_ID, TestCredentials.ORG_ID, null, null,
+                TEST_FIRST_NAME, TEST_LAST_NAME, TEST_EMAIL, TEST_PHOTO_URL, TEST_THUMBNAIL_URL);
         restClient = new RestClient(clientInfo, authToken, httpAccess, null);
     }
 
@@ -102,11 +120,24 @@ public class RestClientTest extends InstrumentationTestCase {
         assertEquals("Wrong username", TestCredentials.USERNAME, restClient.getClientInfo().username);
         assertEquals("Wrong userId", TestCredentials.USER_ID, restClient.getClientInfo().userId);
         assertEquals("Wrong orgId", TestCredentials.ORG_ID, restClient.getClientInfo().orgId);
+        assertEquals("Wrong firstName", TEST_FIRST_NAME, restClient.getClientInfo().firstName);
+        assertEquals("Wrong lastName", TEST_LAST_NAME, restClient.getClientInfo().lastName);
+        assertEquals("Wrong email", TEST_EMAIL, restClient.getClientInfo().email);
+        assertEquals("Wrong photoUrl", TEST_PHOTO_URL, restClient.getClientInfo().photoUrl);
+        assertEquals("Wrong thumbnailUrl", TEST_THUMBNAIL_URL, restClient.getClientInfo().thumbnailUrl);
+
     }
 
     public void testClientInfoResolveUrl() {
     	assertEquals("Wrong url", TestCredentials.INSTANCE_URL + "/a/b/", clientInfo.resolveUrl("a/b/").toString());
     	assertEquals("Wrong url", TestCredentials.INSTANCE_URL + "/a/b/", clientInfo.resolveUrl("/a/b/").toString());
+    }
+
+    public void testClientInfoResolveUrlForHttpsUrl() {
+        assertEquals("Wrong url", "https://testurl", clientInfo.resolveUrl("https://testurl").toString());
+        assertEquals("Wrong url", "http://testurl", clientInfo.resolveUrl("http://testurl").toString());
+        assertEquals("Wrong url", "HTTPS://testurl", clientInfo.resolveUrl("HTTPS://testurl").toString());
+        assertEquals("Wrong url", "HTTP://testurl", clientInfo.resolveUrl("HTTP://testurl").toString());
     }
 
     public void testClientInfoResolveUrlForCommunityUrl() throws Exception {
@@ -116,7 +147,7 @@ public class RestClientTest extends InstrumentationTestCase {
         		new URI(TestCredentials.IDENTITY_URL),
         		TestCredentials.ACCOUNT_NAME, TestCredentials.USERNAME,
         		TestCredentials.USER_ID, TestCredentials.ORG_ID, null,
-        		TestCredentials.COMMUNITY_URL);
+        		TestCredentials.COMMUNITY_URL, null, null, null, null, null);
     	assertEquals("Wrong url", TestCredentials.COMMUNITY_URL + "/a/b/", info.resolveUrl("a/b/").toString());
     	assertEquals("Wrong url", TestCredentials.COMMUNITY_URL + "/a/b/", info.resolveUrl("/a/b/").toString());
     }
@@ -128,7 +159,7 @@ public class RestClientTest extends InstrumentationTestCase {
         		new URI(TestCredentials.IDENTITY_URL),
         		TestCredentials.ACCOUNT_NAME, TestCredentials.USERNAME,
         		TestCredentials.USER_ID, TestCredentials.ORG_ID, null,
-        		TestCredentials.COMMUNITY_URL);
+        		TestCredentials.COMMUNITY_URL, null, null, null, null, null);
         assertEquals("Wrong url", TestCredentials.COMMUNITY_URL, info.getInstanceUrlAsString());
     }
 
@@ -178,13 +209,48 @@ public class RestClientTest extends InstrumentationTestCase {
             public long getLastRefreshTime() {
                 return -1;
             }
+
+            @Override
+            public String getInstanceUrl() { return instanceUrl; }
         };
         RestClient unauthenticatedRestClient = new RestClient(clientInfo, BAD_TOKEN, httpAccess, authTokenProvider);
-
         assertEquals("RestClient should be using the bad token initially", BAD_TOKEN, unauthenticatedRestClient.getAuthToken());
         RestResponse response = unauthenticatedRestClient.sendSync(RestRequest.getRequestForResources(TestCredentials.API_VERSION));
         assertEquals("RestClient should now be using the good token", authToken, unauthenticatedRestClient.getAuthToken());
+        assertTrue("Expected success", response.isSuccess());
+        checkResponse(response, HttpStatus.SC_OK, false);
+    }
 
+    /**
+     * Testing a call with a bad auth token when restClient has a token provider
+     * Expect token provider to be invoked and new token to be used and a new instance url to be returned.
+     * @throws URISyntaxException
+     * @throws IOException
+     */
+    public void testCallWithBadInstanceUrl() throws URISyntaxException, IOException {
+        AuthTokenProvider authTokenProvider = new AuthTokenProvider() {
+            @Override
+            public String getNewAuthToken() {
+                return authToken;
+            }
+
+            @Override
+            public String getRefreshToken() {
+                return null;
+            }
+
+            @Override
+            public long getLastRefreshTime() {
+                return -1;
+            }
+
+            @Override
+            public String getInstanceUrl() { return instanceUrl; }
+        };
+        RestClient unauthenticatedRestClient = new RestClient(clientInfo, BAD_TOKEN, httpAccess, authTokenProvider);
+        assertEquals("RestClient has bad instance url", new URI(TestCredentials.INSTANCE_URL), unauthenticatedRestClient.getClientInfo().instanceUrl);
+        RestResponse response = unauthenticatedRestClient.sendSync(RestRequest.getRequestForResources(TestCredentials.API_VERSION));
+        assertEquals("RestClient should now have the correct instance url", new URI(instanceUrl), unauthenticatedRestClient.getClientInfo().instanceUrl);
         assertTrue("Expected success", response.isSuccess());
         checkResponse(response, HttpStatus.SC_OK, false);
     }
@@ -212,6 +278,15 @@ public class RestClientTest extends InstrumentationTestCase {
         checkKeys(response.asJSONObject(), "sobjects", "search", "recent");
     }
 
+    /**
+     * Testing a get resources async call to the server - check response
+     * @throws Exception
+     */
+    public void testGetResourcesAsync() throws Exception {
+        RestResponse response = sendAsync(restClient, RestRequest.getRequestForResources(TestCredentials.API_VERSION));
+        checkResponse(response, HttpStatus.SC_OK, false);
+        checkKeys(response.asJSONObject(), "sobjects", "search", "recent");
+    }
 
     /**
      * Testing a describe global call to the server - check response
@@ -219,6 +294,18 @@ public class RestClientTest extends InstrumentationTestCase {
      */
     public void testDescribeGlobal() throws Exception {
         RestResponse response = restClient.sendSync(RestRequest.getRequestForDescribeGlobal(TestCredentials.API_VERSION));
+        checkResponse(response, HttpStatus.SC_OK, false);
+        JSONObject jsonResponse = response.asJSONObject();
+        checkKeys(jsonResponse, "encoding", "maxBatchSize", "sobjects");
+        checkKeys(jsonResponse.getJSONArray("sobjects").getJSONObject(0), "name", "label", "custom", "keyPrefix");
+    }
+
+    /**
+     * Testing a describe global async call to the server - check response
+     * @throws Exception
+     */
+    public void testDescribeGlobalAsync() throws Exception {
+        RestResponse response = sendAsync(restClient, RestRequest.getRequestForDescribeGlobal(TestCredentials.API_VERSION));
         checkResponse(response, HttpStatus.SC_OK, false);
         JSONObject jsonResponse = response.asJSONObject();
         checkKeys(jsonResponse, "encoding", "maxBatchSize", "sobjects");
@@ -285,6 +372,7 @@ public class RestClientTest extends InstrumentationTestCase {
      * @throws Exception
      */
     public void testUpdate() throws Exception {
+
         // Create
         IdName newAccountIdName = createAccount();
 
@@ -296,7 +384,7 @@ public class RestClientTest extends InstrumentationTestCase {
         assertTrue("Update failed", updateResponse.isSuccess());
 
         // Retrieve - expect updated name
-        RestResponse response = restClient.sendSync(RestRequest.getRequestForRetrieve(TestCredentials.API_VERSION, "account", newAccountIdName.id, Arrays.asList(new String[] {"name"})));
+        RestResponse response = restClient.sendSync(RestRequest.getRequestForRetrieve(TestCredentials.API_VERSION, "account", newAccountIdName.id, Arrays.asList(new String[]{"name"})));
         assertEquals("Wrong row returned", updatedAccountName, response.asJSONObject().getString("Name"));
     }
 
@@ -307,6 +395,7 @@ public class RestClientTest extends InstrumentationTestCase {
      * @throws Exception
      */
     public void testDelete() throws Exception {
+
         // Create
         IdName newAccountIdName = createAccount();
 
@@ -377,14 +466,8 @@ public class RestClientTest extends InstrumentationTestCase {
         fields.put("name", "NewAccount");
 		checkWrappedRestRequestUrl(RestRequest.getRequestForCreate(TestCredentials.API_VERSION, "account", fields), clientInfo.instanceUrl + "/services/data/" + TestCredentials.API_VERSION + "/sobjects/account");
 		checkWrappedRestRequestUrl(RestRequest.getRequestForUpdate(TestCredentials.API_VERSION, "account", "fakeId", fields), clientInfo.instanceUrl + "/services/data/" + TestCredentials.API_VERSION + "/sobjects/account/fakeId");
-		checkWrappedRestRequestUrl(FileRequests.uploadFile(new File("fakePath"), "MyFile", "Description", "image/png"), clientInfo.instanceUrl + "/services/data/" + ApiVersionStrings.VERSION_NUMBER + "/chatter/users/me/files");
     }
 
-    private void checkWrappedRestRequestUrl(RestRequest restRequest, String expectedUrl) throws Exception {
-    	WrappedRestRequest request = new RestClient.WrappedRestRequest(clientInfo, restRequest, null);
-		assertEquals("Wrong url", expectedUrl, request.getUrl());
-    }      
-    
     /**
      * Testing that WrappedRestRequest's method field is correct with various RestRequest objects
      * @throws Exception
@@ -395,15 +478,8 @@ public class RestClientTest extends InstrumentationTestCase {
         fields.put("name", "NewAccount");
 		checkWrappedRestRequestMethod(RestRequest.getRequestForCreate(TestCredentials.API_VERSION, "account", fields), Request.Method.POST);
 		checkWrappedRestRequestMethod(RestRequest.getRequestForUpdate(TestCredentials.API_VERSION, "account", "fakeId", fields), RestMethod.MethodPATCH);
-		checkWrappedRestRequestMethod(FileRequests.uploadFile(new File("fakePath"), "MyFile", "Description", "image/png"), Request.Method.POST);
     }
-    
-    private void checkWrappedRestRequestMethod(RestRequest restRequest, int expectedMethod) throws Exception {
-    	WrappedRestRequest request = new RestClient.WrappedRestRequest(clientInfo, restRequest, null);
-		assertEquals("Wrong method", expectedMethod, request.getMethod());
-    }        
 
-    
     /**
      * Testing that WrappedRestRequest's body field is correct with various RestRequest objects
      * @throws Exception
@@ -416,27 +492,275 @@ public class RestClientTest extends InstrumentationTestCase {
 		checkWrappedRestRequestBody(RestRequest.getRequestForUpdate(TestCredentials.API_VERSION, "account", "fakeId", fields), "{\"name\":\"NewAccount\"}".getBytes());
     }
 
-    private void checkWrappedRestRequestBody(RestRequest restRequest, byte[] expectedBody) throws Exception {
-    	WrappedRestRequest request = new RestClient.WrappedRestRequest(clientInfo, restRequest, null);
-    	if (expectedBody == null) {
-    		assertNull("Body should be null", request.getBody());
-    	}
-    	else {
-    		assertEquals("Wrong body", new String(expectedBody), new String(request.getBody()));
-    	}
-    }
-
     /**
      * Testing that WrappedRestRequest's body content type field is correct with various RestRequest objects
      * @throws Exception
      */
     public void testWrappedRestRequestBodyContentType() throws Exception {
-    	checkWrappedRestRequestBodyContentType(RestRequest.getRequestForMetadata(TestCredentials.API_VERSION, "account"), "application/x-www-form-urlencoded; charset=UTF-8");
-		Map<String, Object> fields = new HashMap<String, Object>();
+        checkWrappedRestRequestBodyContentType(RestRequest.getRequestForMetadata(TestCredentials.API_VERSION, "account"), "application/x-www-form-urlencoded; charset=UTF-8");
+        Map<String, Object> fields = new HashMap<String, Object>();
         fields.put("name", "NewAccount");
-		checkWrappedRestRequestBodyContentType(RestRequest.getRequestForCreate(TestCredentials.API_VERSION, "account", fields), "application/json; charset=UTF-8");    	
-		checkWrappedRestRequestBodyContentType(RestRequest.getRequestForUpdate(TestCredentials.API_VERSION, "account", "fakeId", fields),  "application/json; charset=UTF-8");
-		checkWrappedRestRequestBodyContentType(FileRequests.uploadFile(new File("fakePath"), "MyFile", "Description", "image/png"),  "multipart/form-data");
+        checkWrappedRestRequestBodyContentType(RestRequest.getRequestForCreate(TestCredentials.API_VERSION, "account", fields), "application/json; charset=UTF-8");
+        checkWrappedRestRequestBodyContentType(RestRequest.getRequestForUpdate(TestCredentials.API_VERSION, "account", "fakeId", fields), "application/json; charset=UTF-8");
+    }
+
+    /**
+     * Testing doing a sync request against a non salesforce public api with a RestClient that uses an UnauthenticatedClientInfo
+     * @return
+     * @throws Exception
+     */
+    public void testRestClientUnauthenticatedlientInfo() throws Exception {
+        RestClient unauthenticatedRestClient = new RestClient(new RestClient.UnauthenticatedClientInfo(), null, HttpAccess.DEFAULT, null);
+        RestRequest request = new RestRequest(RestMethod.GET, "https://api.spotify.com/v1/search?q=James%20Brown&type=artist", null);
+        RestResponse response = unauthenticatedRestClient.sendSync(request);
+        checkResponse(response, HttpStatus.SC_OK, false);
+        JSONObject jsonResponse = response.asJSONObject();
+        checkKeys(jsonResponse, "artists");
+        checkKeys(jsonResponse.getJSONObject("artists"), "href", "items", "limit", "next", "offset", "previous", "total");
+    }
+
+    /**
+     * Testing doing an async request against a non salesforce public api with a RestClient that uses an UnauthenticatedClientInfo
+     * @return
+     * @throws Exception
+     */
+    public void testRestClientUnauthenticatedlientInfoAsync() throws Exception {
+        RestClient unauthenticatedRestClient = new RestClient(new RestClient.UnauthenticatedClientInfo(), null, HttpAccess.DEFAULT, null);
+        RestRequest request = new RestRequest(RestMethod.GET, "https://api.spotify.com/v1/search?q=James%20Brown&type=artist", null);
+        RestResponse response = sendAsync(unauthenticatedRestClient, request);
+        checkResponse(response, HttpStatus.SC_OK, false);
+        JSONObject jsonResponse = response.asJSONObject();
+        checkKeys(jsonResponse, "artists");
+        checkKeys(jsonResponse.getJSONObject("artists"), "href", "items", "limit", "next", "offset", "previous", "total");
+    }
+
+    /**
+     * Tests if the file upload API is working per design.
+     *
+     * @throws Exception
+     */
+    public void testFileUpload() throws Exception {
+        final String filename  = "MyFile.txt";
+        final File file = new File(Environment.getExternalStorageDirectory() + File.separator + filename);
+        if (!file.exists()) {
+            file.createNewFile();
+            final OutputStreamWriter out = new OutputStreamWriter(new FileOutputStream(file));
+            out.write("This is a test!");
+            out.close();
+        }
+        assertTrue("File should exist", file.exists());
+        final RestResponse response = restClient.uploadFile(file, filename, "Test Title", "Test Description");
+        assertNotNull("Response should not be null", response);
+        assertEquals("Status code should be 201 CREATED", HttpStatus.SC_CREATED, response.getStatusCode());
+        file.delete();
+        assertFalse("File should not exist", file.exists());
+    }
+
+    /**
+     * Tests if a stream from {@link RestResponse#asInputStream()} is readable.
+     *
+     * @throws Exception
+     */
+    public void testResponseStreamIsReadable() throws Exception {
+        final RestResponse response = getStreamTestResponse();
+
+        try {
+            InputStream in = response.asInputStream();
+            assertStreamTestResponseStreamIsValid(in);
+        } catch (IOException e) {
+            fail("The InputStream should be readable and an IOException should not have been thrown");
+        } catch (JSONException e) {
+            fail("Valid JSON data should have been returned");
+        } finally {
+            response.consumeQuietly();
+        }
+    }
+
+    /**
+     * Tests if a stream from {@link RestResponse#asInputStream()} is consumed (according to the REST client) by fully reading the stream.
+     *
+     * @throws Exception
+     */
+    public void testResponseStreamConsumedByReadingStream() throws Exception {
+        final RestResponse response = getStreamTestResponse();
+
+        try {
+            InputStream in = response.asInputStream();
+            inputStreamToString(in);
+        } catch (IOException e) {
+            fail("The InputStream should be readable and an IOException should not have been thrown");
+        }
+
+        // We read the entire stream but forgot to call consume() or consumeQuietly() - can another REST call be made?
+        final RestResponse anotherResponse = getStreamTestResponse();
+        assertNotNull(anotherResponse);
+    }
+
+    /**
+     * Tests that a stream from {@link RestResponse#asInputStream()} cannot be read from twice.
+     *
+     * @throws Exception
+     */
+    public void testResponseStreamCannotBeReadTwice() throws Exception {
+        final RestResponse response = getStreamTestResponse();
+
+        try {
+            final InputStream in = response.asInputStream();
+            inputStreamToString(in);
+        } catch (IOException e) {
+            fail("The InputStream should be readable and an IOException should not have been thrown");
+        }
+
+        try {
+            response.asInputStream();
+            fail("An IOException should have been thrown while trying to read the InputStream a second time");
+        } catch (IOException e) {
+            // Expected
+        } finally {
+            response.consumeQuietly();
+        }
+    }
+
+    /**
+     * Tests that {@link RestResponse}'s accessor methods (like {@link RestResponse#asBytes()} do not return valid data if the response is streamed first.
+     *
+     * @throws Exception
+     */
+    public void testOtherAccessorsNotAvailableAfterResponseStreaming() throws Exception {
+        final RestResponse response = getStreamTestResponse();
+
+        final Runnable testAccessorsNotAccessible = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // The other accessors should not return valid data as soon as the stream is opened
+                    assertNotNull(response.asBytes());
+                    assertEquals("asBytes() array should be empty", 0, response.asBytes().length);
+                    assertEquals("asString() should return the empty string", "", response.asString());
+
+                    try {
+                        assertNull(response.asJSONObject());
+                        fail("asJSONObject() should fail");
+                    } catch (JSONException e) {
+                        // Expected
+                    }
+
+                    try {
+                        assertNull(response.asJSONArray());
+                        fail("asJSONArray() should fail");
+                    } catch (JSONException e) {
+                        // Expected
+                    }
+                } catch (IOException e) {
+                    fail("IOException not expected");
+                }
+            }
+        };
+
+        try {
+            response.asInputStream();
+            testAccessorsNotAccessible.run();
+        } catch (IOException e) {
+            fail("The InputStream should be readable and an IOException should not have been thrown");
+        } finally {
+            response.consumeQuietly();
+        }
+
+        // Ensure that consuming the stream doesn't make the accessors accessible again
+        testAccessorsNotAccessible.run();
+    }
+
+    /**
+     * Tests that any call to {@link RestResponse}'s accessor methods prevent the response data from being streamed via {@link RestResponse#asInputStream()}.
+     *
+     * @throws Exception
+     */
+    public void testAccessorMethodsPreventResponseStreaming() throws Exception {
+        final RestResponse response = getStreamTestResponse();
+        response.asBytes();
+
+        try {
+            response.asInputStream();
+            fail("The InputStream should not be readable after an accessor method is called");
+        } catch (IOException e) {
+            // Expected
+        } finally {
+            response.consumeQuietly();
+        }
+    }
+
+    //
+    // Helper methods
+    //
+
+    /**
+     * @return a {@link RestResponse} for testing streaming. It should contain some JSON data.
+     * @throws IOException if the response could not be made
+     */
+    private RestResponse getStreamTestResponse() throws IOException {
+        final RestResponse response = restClient.sendSync(RestRequest.getRequestForResources(TestCredentials.API_VERSION));
+        assertEquals("Response code should be HTTP OK", response.getStatusCode(), HttpStatus.SC_OK);
+        return response;
+    }
+
+    /**
+     * Assert that the {@link RestResponse} returned from {@link #getStreamTestResponse()} is valid.
+     * @param in the {@link InputStream} of response data
+     * @throws IOException if the stream could not be read
+     * @throws JSONException if the response could not be decoded to a valid JSON object
+     */
+    private void assertStreamTestResponseStreamIsValid(InputStream in) throws IOException, JSONException {
+        final String responseData = inputStreamToString(in);
+        assertNotNull("The response should contain data", responseData);
+
+        final JSONObject responseJson = new JSONObject(responseData);
+        checkKeys(responseJson, "sobjects", "search", "recent");
+    }
+
+    private String inputStreamToString(InputStream inputStream) throws IOException {
+        return CharStreams.toString(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Send request using sendAsync method
+     * @param client
+     * @param request
+     * @return
+     * @throws InterruptedException
+     */
+    private RestResponse sendAsync(RestClient client, RestRequest request) throws InterruptedException {
+        final BlockingQueue<RestResponse> responseBlockingQueue = new ArrayBlockingQueue<>(1);
+        client.sendAsync(request, new RestClient.AsyncRequestCallback() {
+            @Override
+            public void onSuccess(RestRequest request, RestResponse response) {
+                responseBlockingQueue.add(response);
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                responseBlockingQueue.add(null);
+            }
+        });
+        return responseBlockingQueue.poll(30, TimeUnit.SECONDS);
+    }
+
+    private void checkWrappedRestRequestUrl(RestRequest restRequest, String expectedUrl) throws Exception {
+        WrappedRestRequest request = new RestClient.WrappedRestRequest(clientInfo, restRequest, null);
+        assertEquals("Wrong url", expectedUrl, request.getUrl());
+    }
+
+    private void checkWrappedRestRequestMethod(RestRequest restRequest, int expectedMethod) throws Exception {
+        WrappedRestRequest request = new RestClient.WrappedRestRequest(clientInfo, restRequest, null);
+        assertEquals("Wrong method", expectedMethod, request.getMethod());
+    }
+
+    private void checkWrappedRestRequestBody(RestRequest restRequest, byte[] expectedBody) throws Exception {
+    	WrappedRestRequest request = new RestClient.WrappedRestRequest(clientInfo, restRequest, null);
+    	if (expectedBody == null) {
+    		assertNull("Body should be null", request.getBody());
+    	} else {
+    		assertEquals("Wrong body", new String(expectedBody), new String(request.getBody()));
+    	}
     }
 
     private void checkWrappedRestRequestBodyContentType(RestRequest restRequest, String expectedBodyContentType) throws Exception {

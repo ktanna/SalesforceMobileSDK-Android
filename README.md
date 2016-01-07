@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/forcedotcom/SalesforceMobileSDK-Android.svg?branch=unstable)](https://travis-ci.org/forcedotcom/SalesforceMobileSDK-Android)
+
 # Salesforce.com Mobile SDK for Android
 
 You have arrived at the source repository for the Salesforce Mobile SDK for Android. Welcome! Starting with our 2.0 release, there are now two ways you can choose to work with the Mobile SDK:
@@ -19,20 +21,29 @@ This pulls submodule dependencies from github.
 Introduction
 ==
 
-### What's New in 3.1
+### What's New in 4.0
 
-**SmartSync Library Enhancements**
-- The sync down operation now offers multiple modes that let the developer decide whether to overwrite locally modified data.
+**Library Upgrades**
+- Raised the target Android OS version to `v6.0` (API 23 - Marshmallow). Android Marshmallow is now fully supported.
+- Raised the minimum Android OS version required by Mobile SDK to `v4.4` (API 19 - KitKat).
+- Upgraded the `Cordova` library to `v5.0.2`.
 
-**Advanced Authentication/MDM Features**
-- Mobile SDK 3.1 provides the ability to perform certificate based authentication of users.
-- MDM providers can now configure login hosts, remote access consumer key and callback URL at runtime, for applications built on Mobile SDK 3.1.
-- Note: The above features are supported only in Android Lollipop (API 21) and above.
+**Library Enhancements**
+- Mobile SDK libraries have been refactored to support better consumption. Native apps no longer require Cordova. Our library projects are listed below.
+	- SalesforceSDK
+	- SmartStore
+	- SmartSync
+	- SalesforceHybrid
+	- SalesforceReact
+- The new SalesforceReact library provides the ability to use React Native. Refer to the React Native chapter in the Mobile SDK Development Guide for details on how to use this feature.
 
 **Other Technical Improvements**
+- TLS 1.1 and 1.2 are now the default protocols used for networking on Mobile SDK. See [this](https://developer.salesforce.com/blogs/engineering/2015/11/disabling-tls-1-0-preparing-mobile-sdk-apps-big-change.html) blog post for important information.
+- `Android Studio` and `gradle` are fully supported. `Eclipse` and `ant` are no longer supported.
+- Improvements to sample apps.
 - Various bug fixes.
 
-Check http://developer.force.com/mobilesdk for additional articles and tutorials
+Check http://developer.force.com/mobilesdk for additional articles and tutorials.
 
 ### Native Applications
 The Salesforce Mobile SDK provides essential libraries for quickly building native mobile apps that seamlessly integrate with the Salesforce cloud architecture.  Out of the box, we provide an implementation of OAuth2, abstracting away the complexity of securely storing refresh tokens or fetching a new session ID when a session expires. The SDK also provides Java wrappers for the Salesforce REST API, making it easy to retrieve, store, and manipulate data.
@@ -48,11 +59,8 @@ Setting up your Development Environment
 
 The following steps will help you get started with your development environment, whether you choose to develop native apps or hybrid apps. See the `README` files in the `native/` and `hybrid/` folders for additional notes pertaining to development in those environments.
 
-1. Install the Android SDK (r21 or above): http://developer.android.com/sdk/index.html
-2. Install ant 1.8.0 or later: http://ant.apache.org/manual/install.html (in order to build from the command line)
-3. Install Eclipse: http://www.eclipse.org/
-4. Install the Android Development Tools (ADT) plugin for Eclipse (r21 or above): http://developer.android.com/sdk/eclipse-adt.html
-5. Get setup on github: http://help.github.com/
+1. Install the Android SDK (r23 or above) and Android Studio: http://developer.android.com/sdk/index.html
+2. Get setup on github: http://help.github.com/
 
 Downloading the Salesforce SDK
 ==

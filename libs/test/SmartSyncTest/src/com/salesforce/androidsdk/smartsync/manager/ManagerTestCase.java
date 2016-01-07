@@ -89,10 +89,10 @@ abstract public class ManagerTestCase extends InstrumentationTestCase {
         		TestCredentials.USER_ID, null);
     	MetadataManager.reset(null);
     	CacheManager.hardReset(null);
-    	SyncManager.reset(null);
+    	SyncManager.reset();
         metadataManager = MetadataManager.getInstance(null);
         cacheManager = CacheManager.getInstance(null);
-        syncManager = SyncManager.getInstance(null);
+        syncManager = SyncManager.getInstance();
         restClient = initRestClient();
         metadataManager.setRestClient(restClient);
         syncManager.setRestClient(restClient);
@@ -126,7 +126,8 @@ abstract public class ManagerTestCase extends InstrumentationTestCase {
         		new URI(TestCredentials.LOGIN_URL),
         		new URI(TestCredentials.IDENTITY_URL),
         		TestCredentials.ACCOUNT_NAME, TestCredentials.USERNAME,
-        		TestCredentials.USER_ID, TestCredentials.ORG_ID, null, null);
+        		TestCredentials.USER_ID, TestCredentials.ORG_ID, null, null,
+                null, null, null, null, null);
         return new RestClient(clientInfo, authToken, httpAccess, null);
     }
     
