@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,13 +26,13 @@
  */
 package com.salesforce.androidsdk.smartsync.util;
 
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.TimeUnit;
+import com.salesforce.androidsdk.smartsync.manager.SyncManager.SyncUpdateCallback;
 
 import org.json.JSONException;
 
-import com.salesforce.androidsdk.smartsync.manager.SyncManager.SyncUpdateCallback;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This tracks sync updates using a queue, allowing for tests to wait for certain sync updates to turn up.
@@ -42,7 +42,7 @@ public class SyncUpdateCallbackQueue implements SyncUpdateCallback {
 	private BlockingQueue<SyncState> syncs; 
 	
 	public SyncUpdateCallbackQueue() {
-		syncs = new ArrayBlockingQueue<SyncState>(10);
+		syncs = new ArrayBlockingQueue<>(10);
 	}
 	
 	public void onUpdate(SyncState sync) {

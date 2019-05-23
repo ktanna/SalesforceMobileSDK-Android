@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -28,26 +28,21 @@ package com.salesforce.androidsdk.phonegap.app;
 
 import android.app.Application;
 
-import com.salesforce.androidsdk.app.SalesforceSDKManager.KeyInterface;
-import com.salesforce.androidsdk.security.Encryptor;
-import com.salesforce.androidsdk.phonegap.app.SalesforceHybridSDKManager;
-
 /**
- * Application class used by hybrid applications
+ * Application class used by hybrid applications.
  */
 public class HybridApp extends Application {
 
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		SalesforceHybridSDKManager.initHybrid(getApplicationContext(), new HybridKeyImpl());
-	}
-}
+		SalesforceHybridSDKManager.initHybrid(getApplicationContext());
 
-class HybridKeyImpl implements KeyInterface {
-
-	@Override
-	public String getKey(String name) {
-		return Encryptor.hash(name + "12s9adpahk;n12-97sdainkasd=012", name + "12kl0dsakj4-cxh1qewkjasdol8");
+		/*
+         * Uncomment the following line to enable IDP login flow. This will allow the user to
+         * either authenticate using the current app or use a designated IDP app for login.
+         * Replace 'idpAppURIScheme' with the URI scheme of the IDP app meant to be used.
+         */
+        // SalesforceHybridSDKManager.getInstance().setIDPAppURIScheme(idpAppURIScheme);
 	}
 }

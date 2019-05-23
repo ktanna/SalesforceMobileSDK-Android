@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, salesforce.com, inc.
+ * Copyright (c) 2013-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -27,6 +27,7 @@
 package com.salesforce.androidsdk.rest.files;
 
 import android.net.Uri;
+
 import com.salesforce.androidsdk.rest.ApiVersionStrings;
 
 /**
@@ -38,14 +39,13 @@ import com.salesforce.androidsdk.rest.ApiVersionStrings;
 public class ConnectUriBuilder {
 
     public static final String EMPTY = "";
-
     private static final String ME = "me";
     private static final String PAGE = "page";
     private static final String PAGESIZE = "pageSize";
     private static final String VERSIONNUMBER = "versionNumber";
 
     public ConnectUriBuilder() {
-        this(Uri.parse(ApiVersionStrings.BASE_CHATTER_PATH).buildUpon());
+        this(Uri.parse(ApiVersionStrings.getBaseChatterPath()).buildUpon());
     }
 
     public ConnectUriBuilder(Uri.Builder b) {
@@ -60,14 +60,14 @@ public class ConnectUriBuilder {
     }
 
     public ConnectUriBuilder appendUserId(String userId) {
-        if (userId != null && EMPTY.equals(userId)) {
+        if (EMPTY.equals(userId)) {
             throw new IllegalArgumentException("invalid user id");
         }
         return appendPath(userId == null ? ME : userId);
     }
 
     public ConnectUriBuilder appendFolderId(String folderId) {
-        if (folderId != null && EMPTY.equals(folderId)) {
+        if (EMPTY.equals(folderId)) {
             throw new IllegalArgumentException("invalid folder id");
         }
         return appendPath(folderId);

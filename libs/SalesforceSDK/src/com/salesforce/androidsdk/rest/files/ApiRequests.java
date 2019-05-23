@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, salesforce.com, inc.
+ * Copyright (c) 2013-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,12 +26,13 @@
  */
 package com.salesforce.androidsdk.rest.files;
 
-import java.util.*;
-
-import android.net.Uri;
-
-import com.salesforce.androidsdk.rest.*;
+import com.salesforce.androidsdk.rest.RestRequest;
 import com.salesforce.androidsdk.rest.RestRequest.RestMethod;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Base class with helpers for building RestRequests of various types.
@@ -41,16 +42,11 @@ import com.salesforce.androidsdk.rest.RestRequest.RestMethod;
 class ApiRequests {
 
     protected static RestRequest make(ConnectUriBuilder builder) {
-        return new RestRequest(RestMethod.GET, builder.toString(), null, HTTP_HEADERS);
+        return new RestRequest(RestMethod.GET, builder.toString(), HTTP_HEADERS);
     }
 
     protected static ConnectUriBuilder base(String firstPathSegment) {
         return new ConnectUriBuilder().appendPath(firstPathSegment);
-    }
-
-    protected static ConnectUriBuilder connectBase(String firstPathSegment) {
-        return new ConnectUriBuilder(Uri.parse(ApiVersionStrings.BASE_CONNECT_PATH).buildUpon())
-                .appendPath(firstPathSegment);
     }
 
     protected static void validateSfdcId(String sfdcId) {
@@ -72,7 +68,7 @@ class ApiRequests {
     protected static final Map<String, String> HTTP_HEADERS;
 
     static {
-        Map<String, String> h = new HashMap<String, String>();
+        Map<String, String> h = new HashMap<>();
         h.put("X-Chatter-Entity-Encoding", "false");
         HTTP_HEADERS = Collections.unmodifiableMap(h);
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, salesforce.com, inc.
+ * Copyright (c) 2012-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -28,7 +28,9 @@ package com.salesforce.androidsdk.phonegap;
 
 import android.content.Context;
 import android.content.pm.PackageManager.NameNotFoundException;
-import android.test.InstrumentationTestCase;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.filters.SmallTest;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.config.BootConfig;
@@ -37,70 +39,80 @@ import com.salesforce.androidsdk.phonegap.plugin.SDKInfoPlugin;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.Assert;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
 import java.util.List;
 
-
 /**
- * Tests for SDKInfoPlugin
- *
+ * Tests for SDKInfoPlugin.
  */
-public class SDKInfoPluginTest extends InstrumentationTestCase {
+@RunWith(AndroidJUnit4.class)
+@SmallTest
+public class SDKInfoPluginTest {
 
 	/**
 	 * Test for getSDKInfo
 	 */
+    @Test
 	public void testGetSDKInfo() throws NameNotFoundException, JSONException {
-		Context ctx = getInstrumentation().getTargetContext();
+		Context ctx = InstrumentationRegistry.getInstrumentation().getTargetContext();
 		JSONObject sdkInfo = SDKInfoPlugin.getSDKInfo(ctx);
 		BootConfig bootconfig = BootConfig.getBootConfig(ctx);
-		assertEquals("Wrong app name", "SalesforceHybridTest", sdkInfo.getString("appName"));
-		assertEquals("Wrong app version", "1.0", sdkInfo.getString("appVersion"));
-		List<String> sdkInfoPlugins = toList(sdkInfo.getJSONArray("forcePluginsAvailable"));
-		assertEquals("Wrong number of plugins", 3, sdkInfoPlugins.size());
-		assertTrue("oauth plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.oauth"));
-		assertTrue("sdkinfo plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.sdkinfo"));
-		assertTrue("sfaccountmanager plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.sfaccountmanager"));
-		assertEquals("Wrong version", SalesforceSDKManager.SDK_VERSION, sdkInfo.getString("sdkVersion"));
-	
+		Assert.assertEquals("Wrong app name", "SalesforceHybridTest", sdkInfo.getString("appName"));
+        Assert.assertEquals("Wrong app version", "1.0", sdkInfo.getString("appVersion"));
+        List<String> sdkInfoPlugins = toList(sdkInfo.getJSONArray("forcePluginsAvailable"));
+        Assert.assertEquals("Wrong number of plugins", 7, sdkInfoPlugins.size());
+        Assert.assertTrue("network plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.network"));
+        Assert.assertTrue("oauth plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.oauth"));
+        Assert.assertTrue("sdkinfo plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.sdkinfo"));
+        Assert.assertTrue("sfaccountmanager plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.sfaccountmanager"));
+        Assert.assertTrue("smartstore plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.smartstore"));
+        Assert.assertTrue("smartsync plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.smartsync"));
+        Assert.assertTrue("testrunner plugin should have been returned", sdkInfoPlugins.contains("com.salesforce.testrunner"));
+        Assert.assertEquals("Wrong version", SalesforceSDKManager.SDK_VERSION, sdkInfo.getString("sdkVersion"));
 		JSONObject sdkInfoBootConfig = sdkInfo.getJSONObject("bootConfig");
-		assertEquals("Wrong bootconfig shouldAuthenticate", bootconfig.shouldAuthenticate(), sdkInfoBootConfig.getBoolean("shouldAuthenticate"));
-		assertEquals("Wrong bootconfig attemptOfflineLoad", bootconfig.attemptOfflineLoad(), sdkInfoBootConfig.getBoolean("attemptOfflineLoad"));
-		assertEquals("Wrong bootconfig isLocal", bootconfig.isLocal(), sdkInfoBootConfig.getBoolean("isLocal"));
+        Assert.assertEquals("Wrong bootconfig shouldAuthenticate", bootconfig.shouldAuthenticate(), sdkInfoBootConfig.getBoolean("shouldAuthenticate"));
+        Assert.assertEquals("Wrong bootconfig attemptOfflineLoad", bootconfig.attemptOfflineLoad(), sdkInfoBootConfig.getBoolean("attemptOfflineLoad"));
+        Assert.assertEquals("Wrong bootconfig isLocal", bootconfig.isLocal(), sdkInfoBootConfig.getBoolean("isLocal"));
 		List<String> sdkInfoOAuthScopes = toList(sdkInfoBootConfig.getJSONArray("oauthScopes"));
-		assertEquals("Wrong bootconfig oauthScopes", 1, sdkInfoOAuthScopes.size());
-		assertTrue("Wrong bootconfig oauthScopes", sdkInfoOAuthScopes.contains("api"));
-		assertEquals("Wrong bootconfig oauthRedirectURI", bootconfig.getOauthRedirectURI(), sdkInfoBootConfig.getString("oauthRedirectURI"));
-		assertEquals("Wrong bootconfig remoteAccessConsumerKey", bootconfig.getRemoteAccessConsumerKey(), sdkInfoBootConfig.getString("remoteAccessConsumerKey"));
-		assertEquals("Wrong bootconfig androidPushNotificationClientId", bootconfig.getPushNotificationClientId(), sdkInfoBootConfig.getString("androidPushNotificationClientId"));
-		assertEquals("Wrong bootconfig startPage", "", sdkInfoBootConfig.optString("startPage")); // this is a native app
-		assertEquals("Wrong bootconfig errorPage", "", sdkInfoBootConfig.optString("errorPage")); // this is a native app
+        Assert.assertEquals("Wrong bootconfig oauthScopes", 1, sdkInfoOAuthScopes.size());
+        Assert.assertTrue("Wrong bootconfig oauthScopes", sdkInfoOAuthScopes.contains("api"));
+        Assert.assertEquals("Wrong bootconfig oauthRedirectURI", bootconfig.getOauthRedirectURI(), sdkInfoBootConfig.getString("oauthRedirectURI"));
+        Assert.assertEquals("Wrong bootconfig remoteAccessConsumerKey", bootconfig.getRemoteAccessConsumerKey(), sdkInfoBootConfig.getString("remoteAccessConsumerKey"));
+        try {
+            sdkInfoBootConfig.getString("androidPushNotificationClientId");
+            Assert.fail("Wrong bootconfig having androidPushNotificationClientId field");
+        } catch (Exception ex) {
+
+            // don't do anything since the exception is expected
+        }
+        Assert.assertEquals("Wrong bootconfig startPage", "index.html", sdkInfoBootConfig.optString("startPage"));
+        Assert.assertEquals("Wrong bootconfig errorPage", "error.html", sdkInfoBootConfig.optString("errorPage"));
+
 	}
 
 	/**
 	 * Test for getForcePluginsFromXML
 	 */
+	@Test
 	public void testGetForcePluginsFromXML() {
-		List<String> plugins = SDKInfoPlugin.getForcePluginsFromXML(getInstrumentation().getTargetContext());
-		assertEquals("Wrong number of force plugins", 6, plugins.size());
-		assertTrue("oauth plugin should have been returned", plugins.contains("com.salesforce.oauth"));
-		assertTrue("sdkinfo plugin should have been returned", plugins.contains("com.salesforce.sdkinfo"));
-		assertTrue("sfaccountmanager plugin should have been returned", plugins.contains("com.salesforce.sfaccountmanager"));
-		assertTrue("smartstore plugin should have been returned", plugins.contains("com.salesforce.smartstore"));
-		assertTrue("smartsync plugin should have been returned", plugins.contains("com.salesforce.smartsync"));
-		assertTrue("testrunner plugin should have been returned", plugins.contains("com.salesforce.testrunner"));
+		List<String> plugins = SDKInfoPlugin.getForcePluginsFromXML(InstrumentationRegistry.getInstrumentation().getTargetContext());
+        Assert.assertEquals("Wrong number of force plugins", 7, plugins.size());
+        Assert.assertTrue("network plugin should have been returned", plugins.contains("com.salesforce.network"));
+        Assert.assertTrue("oauth plugin should have been returned", plugins.contains("com.salesforce.oauth"));
+        Assert.assertTrue("sdkinfo plugin should have been returned", plugins.contains("com.salesforce.sdkinfo"));
+        Assert.assertTrue("sfaccountmanager plugin should have been returned", plugins.contains("com.salesforce.sfaccountmanager"));
+        Assert.assertTrue("smartstore plugin should have been returned", plugins.contains("com.salesforce.smartstore"));
+        Assert.assertTrue("smartsync plugin should have been returned", plugins.contains("com.salesforce.smartsync"));
+        Assert.assertTrue("testrunner plugin should have been returned", plugins.contains("com.salesforce.testrunner"));
 	}
-	
-	/**
-	 * Helper method
-	 * @param jsonArray
-	 * @return
-	 * @throws JSONException 
-	 */
+
 	private List<String> toList(JSONArray jsonArray) throws JSONException {
 		List<String> list = new ArrayList<String>(jsonArray.length());
-		for (int i=0; i<jsonArray.length(); i++) {
+		for (int i = 0; i < jsonArray.length(); i++) {
 			list.add(jsonArray.getString(i));
 		}
 		return list;

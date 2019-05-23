@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, salesforce.com, inc.
+ * Copyright (c) 2013-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -30,35 +30,34 @@ package com.salesforce.androidsdk.phonegap.ui;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.rest.ClientManager;
 import com.salesforce.androidsdk.rest.ClientManager.LoginOptions;
+import com.salesforce.androidsdk.util.test.TestCredentials;
+
+import org.junit.Test;
 
 /**
- * Sub-class of SalesforceDroidGapActivity that authenticates using hard-coded credentials
- *
+ * Sub-class of SalesforceDroidGapActivity that authenticates using hard-coded credentials.
  */
 public class SalesforceHybridTestActivity extends SalesforceDroidGapActivity {
 
-	static String username = "sdktest@cs1.com";
-	static String accountName = username + " (SalesforceHybridTest)";
-	static String refreshToken = "5Aep861KIwKdekr90KlxVVUI47zdR6dX_VeBWZBS.SiQYYAy5LuEc0OGFQRIHGNkCvWU1XiK0TI7w==";
+	static String username = TestCredentials.USERNAME;
+	static String accountName = TestCredentials.ACCOUNT_NAME;
+	static String refreshToken = TestCredentials.REFRESH_TOKEN;
 	static String authToken = "--will-be-set-through-refresh--";
-	static String identityUrl = "https://test.salesforce.com";
-	static String instanceUrl = "https://cs1.salesforce.com";
-	static String loginUrl = "https://test.salesforce.com";
-	static String orgId = "00DS0000000HDptMAG";
-	static String userId = "005S0000003yO7jIAE";
-	
-	@Override
-	protected ClientManager buildClientManager() {
-		final ClientManager clientManager = super.buildClientManager();
-		final LoginOptions loginOptions = SalesforceSDKManager.getInstance().getLoginOptions();
+	static String identityUrl = TestCredentials.IDENTITY_URL;
+	static String instanceUrl = TestCredentials.INSTANCE_URL;
+	static String loginUrl = TestCredentials.LOGIN_URL;
+	static String orgId = TestCredentials.ORG_ID;
+	static String userId = TestCredentials.USER_ID;
+    static String photoUrl = TestCredentials.PHOTO_URL;
+	static String clientId = TestCredentials.CLIENT_ID;
 
-		clientManager.createNewAccount(accountName,
-        		username, refreshToken,
-        		authToken, instanceUrl,
-        		loginUrl, identityUrl,
-        		loginOptions.oauthClientId, orgId,
-        		userId, null);
-	
+	@Override
+	public ClientManager buildClientManager() {
+		final ClientManager clientManager = super.buildClientManager();
+		clientManager.createNewAccount(accountName, username, refreshToken, authToken, instanceUrl,
+        		loginUrl, identityUrl, clientId, orgId, userId,
+				null, null, null, null, null,
+                null, photoUrl, null, null);
 		return clientManager;
 	}
 }

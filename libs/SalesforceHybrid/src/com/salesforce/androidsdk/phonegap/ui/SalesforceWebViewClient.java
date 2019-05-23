@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2015, salesforce.com, inc.
+ * Copyright (c) 2012-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,13 +26,16 @@
  */
 package com.salesforce.androidsdk.phonegap.ui;
 
+import android.content.Context;
 import android.net.Uri;
-import android.util.Log;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
+import com.salesforce.androidsdk.app.Features;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
+import com.salesforce.androidsdk.phonegap.util.SalesforceHybridLogger;
 
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaResourceApi;
@@ -47,10 +50,11 @@ import java.io.IOException;
 public class SalesforceWebViewClient extends SystemWebViewClient {
 
 	static final String WWW_DIR = "/android_asset/www";
-	
+    private static final String TAG = "SalesforceWebViewClient";
+
     // The first non-reserved URL that's loaded will be considered the app's "home page", for caching purposes.
     protected boolean foundHomeUrl = false;
-    protected SalesforceDroidGapActivity ctx;
+    protected Context ctx;
     protected CordovaWebView cordovaWebView;
 
 	/**
@@ -63,7 +67,7 @@ public class SalesforceWebViewClient extends SystemWebViewClient {
     	cordovaWebView = parentEngine.getCordovaWebView();
     	final CordovaInterface cordova = parentEngine.getCordovaInterface();
     	if (cordova != null) {
-        	ctx = (SalesforceDroidGapActivity) cordova.getActivity();
+        	ctx = cordova.getActivity();
     	}
         final SystemWebView webView = (SystemWebView) parentEngine.getView();
     	final String uaStr = SalesforceSDKManager.getInstance().getUserAgent();
@@ -85,6 +89,9 @@ public class SalesforceWebViewClient extends SystemWebViewClient {
         }
     }
 
+    /*
+     * TODO: Remove this method and move the logic into the method below once minApi >= 24.
+     */
     @Override
     public boolean shouldOverrideUrlLoading(final WebView view, String url) {
     	if (SalesforceWebViewClientHelper.shouldOverrideUrlLoading(ctx, view, url)) {
@@ -95,13 +102,18 @@ public class SalesforceWebViewClient extends SystemWebViewClient {
     }
 
     @Override
+	public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+		return shouldOverrideUrlLoading(view, request.getUrl().toString());
+	}
+
+    @Override
     public void onPageFinished(WebView view, String url) {
         if (!this.foundHomeUrl && SalesforceWebViewClientHelper.onHomePage(SalesforceSDKManager.getInstance().getAppContext(), view, url)) {
             this.foundHomeUrl = true;
         }
         super.onPageFinished(view, url);
     }
-    
+
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
     	WebResourceResponse response = super.shouldInterceptRequest(view, url);
@@ -117,8 +129,9 @@ public class SalesforceWebViewClient extends SystemWebViewClient {
 		if (host == null || !host.equals("localhost")) {
 			return null;
 		}
-			
+
 		// Localhost request.
+		SalesforceSDKManager.getInstance().registerUsedAppFeature(Features.FEATURE_LOCALHOST);
 		try {
 			String localPath = WWW_DIR + origUri.getPath();
 
@@ -129,16 +142,15 @@ public class SalesforceWebViewClient extends SystemWebViewClient {
 				Uri localUri = Uri.parse("file://" + localPath);
 				CordovaResourceApi resourceApi = cordovaWebView.getResourceApi();
 				OpenForReadResult result = resourceApi.openForRead(localUri, true);
-				Log.i("SalesforceWebViewClient.shouldInterceptRequest", "Loading local file:" + localUri);
+				SalesforceHybridLogger.i(TAG, "Loading local file: " + localUri);
 				return new WebResourceResponse(result.mimeType, "UTF-8", result.inputStream);
 			}
-			
-		} catch (IOException e) {    	
-			Log.e("SalesforceWebViewClient.shouldInterceptRequest", "Invalid localhost url:" + url, e);
-			return new WebResourceResponse("text/plain", "UTF-8", null); 
+		} catch (IOException e) {
+            SalesforceHybridLogger.e(TAG, "Invalid localhost URL: " + url, e);
+			return new WebResourceResponse("text/plain", "UTF-8", null);
 		}
     }
-    
+
     private boolean isFileUnder(String filePath, String dirPath) throws IOException {
     	File file = new File(filePath);
     	File dir = new File(dirPath);

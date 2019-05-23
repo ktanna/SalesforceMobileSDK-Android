@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,14 +26,24 @@
  */
 package com.salesforce.androidsdk.accounts;
 
+import android.app.DownloadManager;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.net.Uri;
+import android.os.Bundle;
+import android.text.TextUtils;
+
+import com.salesforce.androidsdk.app.Features;
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
+import com.salesforce.androidsdk.util.MapUtil;
+import com.salesforce.androidsdk.util.SalesforceSDKLogger;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.os.Bundle;
-import android.text.TextUtils;
-import android.util.Log;
-
-import com.salesforce.androidsdk.app.SalesforceSDKManager;
+import java.io.File;
+import java.util.Map;
 
 /**
  * This class represents a single user account that is currently
@@ -53,10 +63,9 @@ public class UserAccount {
 	public static final String USER_ID = "userId";
 	public static final String USERNAME = "username";
 	public static final String ACCOUNT_NAME = "accountName";
-	public static final String CLIENT_ID = "clientId";
 	public static final String COMMUNITY_ID = "communityId";
 	public static final String COMMUNITY_URL = "communityUrl";
-	public static final String INTERNAL_COMMUNITY_ID = "000000000000000000";
+	public static final String INTERNAL_COMMUNITY_ID = "000000000000000AAA";
 	public static final String INTERNAL_COMMUNITY_PATH = "internal";
     public static final String EMAIL = "email";
     public static final String FIRST_NAME = "first_name";
@@ -68,6 +77,10 @@ public class UserAccount {
 	private static final String TAG = "UserAccount";
 	private static final String FORWARD_SLASH = "/";
 	private static final String UNDERSCORE = "_";
+	private static final String PROFILE_PHOTO_PATH_PREFIX = "profile_photo_";
+    private static final String AUTHORIZATION = "Authorization";
+    private static final String BEARER = "Bearer ";
+    private static final String JPG = ".jpg";
 
 	private String authToken;
 	private String refreshToken;
@@ -78,7 +91,6 @@ public class UserAccount {
 	private String userId;
 	private String username;
 	private String accountName;
-	private String clientId;
 	private String communityId;
 	private String communityUrl;
     private String firstName;
@@ -87,6 +99,7 @@ public class UserAccount {
 	private String email;
     private String photoUrl;
     private String thumbnailUrl;
+    private Map<String, String> additionalOauthValues;
 
 	/**
 	 * Parameterized constructor.
@@ -100,49 +113,22 @@ public class UserAccount {
 	 * @param userId User ID.
 	 * @param username Username.
 	 * @param accountName Account name.
-	 * @param clientId Client ID.
 	 * @param communityId Community ID.
 	 * @param communityUrl Community URL.
-	 */
-    public UserAccount(String authToken, String refreshToken,
-                       String loginServer, String idUrl, String instanceServer,
-                       String orgId, String userId, String username, String accountName,
-                       String clientId, String communityId, String communityUrl) {
-        this(authToken, refreshToken,
-                loginServer, idUrl, instanceServer,
-                orgId, userId, username, accountName,
-                clientId, communityId, communityUrl,
-                null, null, null, null, null, null);
-    }
-
-    /**
-     * Parameterized constructor.
-     *
-     * @param authToken Auth token.
-     * @param refreshToken Refresh token.
-     * @param loginServer Login server.
-     * @param idUrl Identity URL.
-     * @param instanceServer Instance server.
-     * @param orgId Org ID.
-     * @param userId User ID.
-     * @param username Username.
-     * @param accountName Account name.
-     * @param clientId Client ID.
-     * @param communityId Community ID.
-     * @param communityUrl Community URL.
-     * @param firstName First Name.
-     * @param lastName Last Name.
+	 * @param firstName First Name.
+	 * @param lastName Last Name.
 	 * @param displayName Display Name.
 	 * @param email Email.
-     * @param photoUrl Photo URL.
-     * @param thumbnailUrl Thumbnail URL.
-     */
-	public UserAccount(String authToken, String refreshToken,
-			String loginServer, String idUrl, String instanceServer,
-			String orgId, String userId, String username, String accountName,
-			String clientId, String communityId, String communityUrl,
-            String firstName, String lastName, String displayName, String email, String photoUrl,
-            String thumbnailUrl ) {
+	 * @param photoUrl Photo URL.
+	 * @param thumbnailUrl Thumbnail URL.
+	 * @param additionalOauthValues Additional OAuth values.
+	 */
+	UserAccount(String authToken, String refreshToken,
+					   String loginServer, String idUrl, String instanceServer,
+					   String orgId, String userId, String username, String accountName,
+					   String communityId, String communityUrl, String firstName, String lastName,
+                       String displayName, String email, String photoUrl,
+					   String thumbnailUrl, Map<String, String> additionalOauthValues) {
 		this.authToken = authToken;
 		this.refreshToken = refreshToken;
 		this.loginServer = loginServer;
@@ -152,15 +138,16 @@ public class UserAccount {
 		this.userId = userId;
 		this.username = username;
 		this.accountName = accountName;
-		this.clientId = clientId;
 		this.communityId = communityId;
 		this.communityUrl = communityUrl;
-        this.firstName = firstName;
-        this.lastName = lastName;
+		this.firstName = firstName;
+		this.lastName = lastName;
 		this.displayName = displayName;
-        this.email = email;
-        this.photoUrl = photoUrl;
-        this.thumbnailUrl = thumbnailUrl;
+		this.email = email;
+		this.photoUrl = photoUrl;
+		this.thumbnailUrl = thumbnailUrl;
+		this.additionalOauthValues = additionalOauthValues;
+		SalesforceSDKManager.getInstance().registerUsedAppFeature(Features.FEATURE_USER_AUTH);
 	}
 
 	/**
@@ -178,7 +165,6 @@ public class UserAccount {
 			orgId = object.optString(ORG_ID, null);
 			userId = object.optString(USER_ID, null);
 			username = object.optString(USERNAME, null);
-			clientId = object.optString(CLIENT_ID, null);
 			if (!TextUtils.isEmpty(username) && !TextUtils.isEmpty(instanceServer)) {
 				accountName = String.format("%s (%s) (%s)", username, instanceServer,
 						SalesforceSDKManager.getInstance().getApplicationName());
@@ -191,6 +177,8 @@ public class UserAccount {
 			email = object.optString(EMAIL, null);
             photoUrl = object.optString(PHOTO_URL, null);
 			thumbnailUrl = object.optString(THUMBNAIL_URL, null);
+            additionalOauthValues = MapUtil.addJSONObjectToMap(object,
+                    SalesforceSDKManager.getInstance().getAdditionalOauthKeys(), additionalOauthValues);
 		}
 	}
 
@@ -209,7 +197,6 @@ public class UserAccount {
 			orgId = bundle.getString(ORG_ID);
 			userId = bundle.getString(USER_ID);
 			username = bundle.getString(USERNAME);
-			clientId = bundle.getString(CLIENT_ID);
 			accountName = bundle.getString(ACCOUNT_NAME);
 			communityId = bundle.getString(COMMUNITY_ID);
 			communityUrl = bundle.getString(COMMUNITY_URL);
@@ -219,6 +206,8 @@ public class UserAccount {
 			email = bundle.getString(EMAIL);
             photoUrl = bundle.getString(PHOTO_URL);
             thumbnailUrl = bundle.getString(THUMBNAIL_URL);
+            additionalOauthValues = MapUtil.addBundleToMap(bundle,
+					SalesforceSDKManager.getInstance().getAdditionalOauthKeys(), additionalOauthValues);
 		}
 	}
 
@@ -304,15 +293,6 @@ public class UserAccount {
 	}
 
 	/**
-	 * Returns the client ID for this user account.
-	 *
-	 * @return Client ID.
-	 */
-	public String getClientId() {
-		return clientId;
-	}
-
-	/**
 	 * Returns the community ID for this user account.
 	 *
 	 * @return Community ID.
@@ -382,6 +362,51 @@ public class UserAccount {
      */
     public String getThumbnailUrl() {
         return thumbnailUrl;
+    }
+
+    /**
+     * Returns the additional OAuth values for this user.
+     *
+     * @return Additional OAuth values.
+     */
+    public Map<String, String> getAdditionalOauthValues() {
+        return additionalOauthValues;
+    }
+
+    /**
+     * Fetches this user's profile photo from the cache.
+     *
+     * @return User's profile photo.
+     */
+    public Bitmap getProfilePhoto() {
+        final File file = getProfilePhotoFile();
+        final BitmapFactory.Options bitmapOptions = new BitmapFactory.Options();
+        bitmapOptions.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        return BitmapFactory.decodeFile(file.getAbsolutePath(), bitmapOptions);
+    }
+
+    /**
+     * Fetches this user's profile photo from the server and stores it in the cache.
+     */
+    public void downloadProfilePhoto() {
+        if (photoUrl == null) {
+            return;
+        }
+        final File file = getProfilePhotoFile();
+        final Uri srcUri = Uri.parse(photoUrl);
+        final Uri destUri = Uri.fromFile(file);
+        if (srcUri == null || destUri == null) {
+        	return;
+		}
+        final DownloadManager.Request downloadReq = new DownloadManager.Request(srcUri);
+        downloadReq.setDestinationUri(destUri);
+        downloadReq.addRequestHeader(AUTHORIZATION, BEARER + authToken);
+        downloadReq.setNotificationVisibility(DownloadManager.Request.VISIBILITY_HIDDEN);
+        downloadReq.setVisibleInDownloadsUi(false);
+        final DownloadManager downloadManager = (DownloadManager) SalesforceSDKManager.getInstance().getAppContext().getSystemService(Context.DOWNLOAD_SERVICE);
+        if (downloadManager != null) {
+            downloadManager.enqueue(downloadReq);
+        }
     }
 
 	/**
@@ -567,7 +592,7 @@ public class UserAccount {
      * @return JSONObject instance.
      */
     public JSONObject toJson() {
-    	final JSONObject object = new JSONObject();
+    	JSONObject object = new JSONObject();
     	try {
         	object.put(AUTH_TOKEN, authToken);
         	object.put(REFRESH_TOKEN, refreshToken);
@@ -577,7 +602,6 @@ public class UserAccount {
         	object.put(ORG_ID, orgId);
         	object.put(USER_ID, userId);
         	object.put(USERNAME, username);
-        	object.put(CLIENT_ID, clientId);
         	object.put(COMMUNITY_ID, communityId);
         	object.put(COMMUNITY_URL, communityUrl);
             object.put(FIRST_NAME, firstName);
@@ -586,8 +610,10 @@ public class UserAccount {
 			object.put(EMAIL, email);
             object.put(PHOTO_URL, photoUrl);
             object.put(THUMBNAIL_URL, thumbnailUrl);
+            object = MapUtil.addMapToJSONObject(additionalOauthValues,
+                    SalesforceSDKManager.getInstance().getAdditionalOauthKeys(), object);
     	} catch (JSONException e) {
-    		Log.e(TAG, "Unable to convert to JSON");
+			SalesforceSDKLogger.e(TAG, "Unable to convert to JSON", e);
     	}
     	return object;
     }
@@ -598,7 +624,7 @@ public class UserAccount {
      * @return Bundle instance.
      */
     public Bundle toBundle() {
-    	final Bundle object = new Bundle();
+    	Bundle object = new Bundle();
         object.putString(AUTH_TOKEN, authToken);
         object.putString(REFRESH_TOKEN, refreshToken);
         object.putString(LOGIN_SERVER, loginServer);
@@ -607,7 +633,6 @@ public class UserAccount {
         object.putString(ORG_ID, orgId);
         object.putString(USER_ID, userId);
         object.putString(USERNAME, username);
-        object.putString(CLIENT_ID, clientId);
         object.putString(ACCOUNT_NAME, accountName);
         object.putString(COMMUNITY_ID, communityId);
         object.putString(COMMUNITY_URL, communityUrl);
@@ -617,6 +642,14 @@ public class UserAccount {
 		object.putString(EMAIL, email);
         object.putString(PHOTO_URL, photoUrl);
         object.putString(THUMBNAIL_URL, thumbnailUrl);
+        object = MapUtil.addMapToBundle(additionalOauthValues,
+                SalesforceSDKManager.getInstance().getAdditionalOauthKeys(), object);
     	return object;
+    }
+
+    private File getProfilePhotoFile() {
+        final String filename = PROFILE_PHOTO_PATH_PREFIX + getUserLevelFilenameSuffix() + JPG;
+        return (new File(SalesforceSDKManager.getInstance().getAppContext().getExternalCacheDir(),
+                filename));
     }
 }

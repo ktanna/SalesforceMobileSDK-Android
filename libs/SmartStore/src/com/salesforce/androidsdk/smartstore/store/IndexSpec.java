@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, salesforce.com, inc.
+ * Copyright (c) 2012-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -168,5 +168,18 @@ public class IndexSpec {
 		}
 		return false;
 	}
-	
+
+	/**
+	 * @param indexSpecs
+	 * @return true if at least one of the indexSpec is of type json1
+	 */
+	public static boolean hasJSON1(IndexSpec[] indexSpecs) {
+		for (IndexSpec indexSpec : indexSpecs) {
+			if (indexSpec.type == Type.json1) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 }

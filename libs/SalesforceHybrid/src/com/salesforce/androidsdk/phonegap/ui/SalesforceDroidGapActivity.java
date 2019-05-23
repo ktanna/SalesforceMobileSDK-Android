@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2015, salesforce.com, inc.
+ * Copyright (c) 2011-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,20 +26,22 @@
  */
 package com.salesforce.androidsdk.phonegap.ui;
 
-import android.content.IntentFilter;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.SystemClock;
-import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.URLUtil;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import com.salesforce.androidsdk.accounts.UserAccountManager;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.auth.HttpAccess.NoNetworkException;
 import com.salesforce.androidsdk.config.BootConfig;
-import com.salesforce.androidsdk.rest.ApiVersionStrings;
+import com.salesforce.androidsdk.config.LoginServerManager;
+import com.salesforce.androidsdk.phonegap.app.SalesforceHybridSDKManager;
+import com.salesforce.androidsdk.phonegap.util.SalesforceHybridLogger;
 import com.salesforce.androidsdk.rest.ClientManager;
 import com.salesforce.androidsdk.rest.ClientManager.AccountInfoNotFoundException;
 import com.salesforce.androidsdk.rest.ClientManager.RestClientCallback;
@@ -48,265 +50,300 @@ import com.salesforce.androidsdk.rest.RestClient.AsyncRequestCallback;
 import com.salesforce.androidsdk.rest.RestClient.ClientInfo;
 import com.salesforce.androidsdk.rest.RestRequest;
 import com.salesforce.androidsdk.rest.RestResponse;
-import com.salesforce.androidsdk.security.PasscodeManager;
+import com.salesforce.androidsdk.ui.SalesforceActivityDelegate;
+import com.salesforce.androidsdk.ui.SalesforceActivityInterface;
+import com.salesforce.androidsdk.util.AuthConfigUtil;
 import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
-import com.salesforce.androidsdk.util.UserSwitchReceiver;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaActivity;
 import org.apache.cordova.CordovaWebView;
 import org.apache.cordova.CordovaWebViewEngine;
 import org.apache.cordova.CordovaWebViewImpl;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.utils.URLEncodedUtils;
-import org.apache.http.message.BasicNameValuePair;
 import org.json.JSONObject;
 
 import java.net.URI;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+
+import okhttp3.HttpUrl;
 
 /**
  * Class that defines the main activity for a PhoneGap-based application.
  */
-public class SalesforceDroidGapActivity extends CordovaActivity {
+public class SalesforceDroidGapActivity extends CordovaActivity implements SalesforceActivityInterface {
 
-    // Keys in credentials map
-    private static final String USER_AGENT = "userAgent";
-    private static final String INSTANCE_URL = "instanceUrl";
-    private static final String LOGIN_URL = "loginUrl";
-    private static final String IDENTITY_URL = "identityUrl";
-    private static final String CLIENT_ID = "clientId";
-    private static final String ORG_ID = "orgId";
-    private static final String USER_ID = "userId";
-    private static final String REFRESH_TOKEN = "refreshToken";
-    private static final String ACCESS_TOKEN = "accessToken";
-    private static final String COMMUNITY_ID = "communityId";
-    private static final String COMMUNITY_URL = "communityUrl";
-	
-    // Used in refresh REST call
-    private static final String API_VERSION = ApiVersionStrings.VERSION_NUMBER;
-	
-	// Rest client
+    private static final String TAG = "SfDroidGapActivity";
+
+    // Delegate
+    private final SalesforceActivityDelegate delegate;
+
+    // Rest client
     private RestClient client;
-	private ClientManager clientManager;
-    
-    // Config
-	private BootConfig bootconfig;
-    private PasscodeManager passcodeManager;
-    private UserSwitchReceiver userSwitchReceiver;
+    private ClientManager clientManager;
 
-	// Web app loaded?
-	private boolean webAppLoaded = false;
-	
-    /** Called when the activity is first created. */
+    // Config
+    private BootConfig bootconfig;
+    private AuthConfigUtil.MyDomainAuthConfig authConfig;
+
+    // Web app loaded?
+    private boolean webAppLoaded = false;
+
+    public SalesforceDroidGapActivity() {
+        super();
+        delegate = new SalesforceActivityDelegate(this);
+    }
+
+    /**
+     * Called when the activity is first created.
+     */
     @Override
     public void onCreate(Bundle savedInstanceState) {
-    	Log.i("SalesforceDroidGapActivity.onCreate", "onCreate called");
         super.onCreate(savedInstanceState);
         init();
 
-		// Get bootconfig
-		bootconfig = BootConfig.getBootConfig(this);
+        // Get bootconfig
+        bootconfig = BootConfig.getBootConfig(this);
 
         // Get clientManager
         clientManager = buildClientManager();
 
-        // Passcode manager
-        passcodeManager = SalesforceSDKManager.getInstance().getPasscodeManager();
-        userSwitchReceiver = new DroidGapUserSwitchReceiver();
-        registerReceiver(userSwitchReceiver, new IntentFilter(UserAccountManager.USER_SWITCH_INTENT_ACTION));
+        // Setup global stores and syncs defined in static configs
+        SalesforceHybridSDKManager.getInstance().setupGlobalStoreFromDefaultConfig();
+        SalesforceHybridSDKManager.getInstance().setupGlobalSyncsFromDefaultConfig();
 
-		// Let observers know
-		EventsObservable.get().notifyEvent(EventType.MainActivityCreateComplete, this);
+        // Delegate create
+        delegate.onCreate();
     }
 
-	protected ClientManager buildClientManager() {
-		return new ClientManager(this, SalesforceSDKManager.getInstance().getAccountType(),
-				SalesforceSDKManager.getInstance().getLoginOptions(),
-				SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked());
-	}
+    public ClientManager buildClientManager() {
+        return SalesforceHybridSDKManager.getInstance().getClientManager();
+    }
 
-	@Override
-	public void init() {
-    	Log.i("SalesforceDroidGapActivity.init", "init called");
-    	super.init();
-    	EventsObservable.get().notifyEvent(EventType.GapWebViewCreateComplete, appView);
-	}
+    @Override
+    public void init() {
+        super.init();
+        EventsObservable.get().notifyEvent(EventType.GapWebViewCreateComplete, appView);
+    }
 
-	@Override
+    @Override
     protected CordovaWebViewEngine makeWebViewEngine() {
-		final String className = SalesforceWebViewEngine.class.getCanonicalName();
-		preferences.set("webview", className);
+        final String className = SalesforceWebViewEngine.class.getCanonicalName();
+        preferences.set("webview", className);
         return CordovaWebViewImpl.createEngine(this, preferences);
     }
 
     @Override
     public void onResume() {
         super.onResume();
-    	if (passcodeManager.onResume(this)) {
 
-            // Get client (if already logged in)
-            try {
-    			client = clientManager.peekRestClient();
-    		} catch (AccountInfoNotFoundException e) {
-    			client = null;
-    		}
+        // Fetches auth config if required.
+        try {
+            (new FetchAuthConfigTask()).execute();
+        } catch (Exception e) {
+            SalesforceHybridLogger.e(TAG, "Exception occurred while fetching auth config", e);
+        }
+        delegate.onResume(false);
+        // will call this.onResume(RestClient client) with a null client
+    }
 
-    		// Not logged in
-        	if (client == null) {
-        		onResumeNotLoggedIn();
-        	}
+    @Override
+    public void onResume(RestClient c) {
+        // Called from delegate with null
 
-        	// Logged in
-        	else {
+        // Get client (if already logged in)
+        try {
+            client = clientManager.peekRestClient();
+        } catch (AccountInfoNotFoundException e) {
+            client = null;
+        }
 
-        		// Web app never loaded
-        		if (!webAppLoaded) {
-        			onResumeLoggedInNotLoaded();
-        		}
+        // Not logged in
+        if (client == null) {
+            if (!webAppLoaded) {
+                onResumeNotLoggedIn();
+            } else {
+                SalesforceHybridLogger.i(TAG, "onResume - unauthenticated web app already loaded");
+            }
+        }
 
-        		// Web app already loaded
-        		else {
-                	Log.i("SalesforceDroidGapActivity.onResume", "Already logged in / web app already loaded");
-        		}
-        	}
+        // Logged in
+        else {
+
+            // Web app never loaded
+            if (!webAppLoaded) {
+                onResumeLoggedInNotLoaded();
+            }
+
+            // Web app already loaded
+            else {
+                SalesforceHybridLogger.i(TAG, "onResume - already logged in/web app already loaded");
+            }
         }
     }
 
     /**
-     * Restarts the activity if the user has been switched.
+     * Returns the auth config associated with the current login server, if it exists.
+     *
+     * @return Auth config.
      */
-	private void restartIfUserSwitched() {
-		if (client != null) {
-            try {
-    			RestClient currentClient = clientManager.peekRestClient();
-    			if (currentClient != null && !currentClient.getClientInfo().userId.equals(client.getClientInfo().userId)) {
-    				this.recreate();
-    			}
-    		} catch (AccountInfoNotFoundException e) {
-            	Log.i("SalesforceDroidGapActivity.restartIfUserSwitched", "No user account found");
-    		}
+    public AuthConfigUtil.MyDomainAuthConfig getAuthConfig() {
+        return authConfig;
+    }
+
+    /**
+     * Called when resuming activity and user is not authenticated
+     */
+    private void onResumeNotLoggedIn() {
+        try {
+            BootConfig.validateBootConfig(bootconfig);
+
+            // Need to be authenticated
+            if (bootconfig.shouldAuthenticate()) {
+
+                // Online
+                if (SalesforceSDKManager.getInstance().hasNetwork()) {
+                    SalesforceHybridLogger.i(TAG, "onResumeNotLoggedIn - should authenticate/online - authenticating");
+                    authenticate(null);
+                }
+
+                // Offline
+                else {
+                    SalesforceHybridLogger.w(TAG, "onResumeNotLoggedIn - should authenticate/offline - can not proceed");
+                    loadErrorPage();
+                }
+            }
+
+            // Does not need to be authenticated
+            else {
+
+                // Local
+                if (bootconfig.isLocal()) {
+                    SalesforceHybridLogger.i(TAG, "onResumeNotLoggedIn - should not authenticate/local start page - loading web app");
+                    loadLocalStartPage();
+                }
+
+                // Remote
+                else {
+                    SalesforceHybridLogger.w(TAG, "onResumeNotLoggedIn - should not authenticate/remote start page - loading web app");
+                    loadRemoteStartPage(bootconfig.getUnauthenticatedStartPage(), false);
+                }
+            }
+        } catch (BootConfig.BootConfigException e) {
+            SalesforceHybridLogger.w(TAG, "onResumeNotLoggedIn - Boot config did not pass validation: "
+                    + e.getMessage()
+                    + " - cannot proceed");
+            loadErrorPage();
         }
-	}
+    }
 
-	/**
-	 * Called when resuming activity and user is not authenticated
-	 */
-	private void onResumeNotLoggedIn() {
+    /**
+     * Called when resuming activity and user is authenticated but webview has not been loaded yet
+     */
+    private void onResumeLoggedInNotLoaded() {
 
-		// Need to be authenticated
-		if (bootconfig.shouldAuthenticate()) {
+        // Setup user stores and syncs defined in static configs
+        SalesforceHybridSDKManager.getInstance().setupUserStoreFromDefaultConfig();
+        SalesforceHybridSDKManager.getInstance().setupUserSyncsFromDefaultConfig();
 
-			// Online
-			if (SalesforceSDKManager.getInstance().hasNetwork()) {
-		    	Log.i("SalesforceDroidGapActivity.onResumeNotLoggedIn", "Should authenticate / online - authenticating");
-				authenticate(null);
-			}
+        // Local
+        if (bootconfig.isLocal()) {
+            SalesforceHybridLogger.i(TAG, "onResumeLoggedInNotLoaded - local start page - loading web app");
+            loadLocalStartPage();
+        }
 
-			// Offline
-			else {
-				Log.w("SalesforceDroidGapActivity.onResumeNotLoggedIn", "Should authenticate / offline - cannot proceed");
-				loadErrorPage();
-			}
-		}
+        // Remote
+        else {
 
-		// Does not need to be authenticated
-		else {
+            // Online
+            if (SalesforceSDKManager.getInstance().hasNetwork()) {
+                SalesforceHybridLogger.i(TAG, "onResumeLoggedInNotLoaded - remote start page/online - loading web app");
+                loadRemoteStartPage(bootconfig.getStartPage(), true);
+            }
 
-			// Local
-			if (bootconfig.isLocal()) {
-				Log.i("SalesforceDroidGapActivity.onResumeNotLoggedIn", "Should not authenticate / local start page - loading web app");
-				loadLocalStartPage();
-			}
+            // Offline
+            else {
+                // Has cached version
+                if (SalesforceWebViewClientHelper.hasCachedAppHome(this)) {
+                    SalesforceHybridLogger.i(TAG, "onResumeLoggedInNotLoaded - remote start page/offline/cached - loading cached web app");
+                    loadCachedStartPage();
+                }
 
-			// Remote
-			else {
-				Log.w("SalesforceDroidGapActivity.onResumeNotLoggedIn", "Should not authenticate / remote start page - cannot proceed");
-				loadErrorPage();
-			}
-		}
-	}
-
-	/**
-	 * Called when resuming activity and user is authenticated but webview has not been loaded yet
-	 */
-	private void onResumeLoggedInNotLoaded() {
-
-		// Local
-		if (bootconfig.isLocal()) {
-			Log.i("SalesforceDroidGapActivity.onResumeLoggedInNotLoaded", "Local start page - loading web app");
-			loadLocalStartPage();
-		}
-
-		// Remote
-		else {
-
-			// Online
-			if (SalesforceSDKManager.getInstance().hasNetwork()) {
-		    	Log.i("SalesforceDroidGapActivity.onResumeLoggedInNotLoaded", "Remote start page / online - loading web app");
-		    	loadRemoteStartPage();
-			}
-
-			// Offline
-			else {
-				// Has cached version
-				if (SalesforceWebViewClientHelper.hasCachedAppHome(this)) {
-		        	Log.i("SalesforceDroidGapActivity.onResumeLoggedInNotLoaded", "Remote start page / offline / cached - loading cached web app");
-					loadCachedStartPage();
-				}
-
-				// No cached version
-				else {
-		        	Log.w("SalesforceDroidGapActivity.onResumeLoggedInNotLoaded", "Remote start page / offline / not cached - cannot proceed");
-		        	loadErrorPage();
-				}
-			}
-		}
-	}
+                // No cached version
+                else {
+                    SalesforceHybridLogger.i(TAG, "onResumeLoggedInNotLoaded - remote start page/offline/not cached - can not proceed");
+                    loadErrorPage();
+                }
+            }
+        }
+    }
 
     @Override
     public void onPause() {
         super.onPause();
-        passcodeManager.onPause(this);
+        delegate.onPause();
     }
 
     @Override
     public void onDestroy() {
-    	unregisterReceiver(userSwitchReceiver);
-    	super.onDestroy();
+        delegate.onDestroy();
+        super.onDestroy();
     }
 
     @Override
     public void onUserInteraction() {
-        passcodeManager.recordUserInteraction();
+        delegate.onUserInteraction();
     }
-    
-	public BootConfig getBootConfig() {
-		return bootconfig;
-	}
-    
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        return delegate.onKeyUp(keyCode, event) || super.onKeyUp(keyCode, event);
+    }
+
+    /**
+     * Returns an instance of BootConfig.
+     *
+     * @return Instance of BootConfig.
+     */
+    public BootConfig getBootConfig() {
+        return bootconfig;
+    }
+
+    /**
+     * Returns an instance of RestClient.
+     *
+     * @return Instance of RestClient.
+     */
+    public RestClient getRestClient() {
+        return client;
+    }
+
+    public void logout(CallbackContext callbackContext) {
+        SalesforceHybridLogger.i(TAG, "logout called");
+        SalesforceSDKManager.getInstance().logout(this);
+        if (callbackContext != null) {
+            callbackContext.success();
+        }
+    }
+
     /**
      * Get a RestClient and refresh the auth token
+     *
      * @param callbackContext when not null credentials/errors are sent through to callbackContext.success()/error()
      */
     public void authenticate(final CallbackContext callbackContext) {
-    	Log.i("SalesforceDroidGapActivity.authenticate", "authenticate called");
+        SalesforceHybridLogger.i(TAG, "authenticate called");
         clientManager.getRestClient(this, new RestClientCallback() {
 
-			@Override
-			public void authenticatedRestClient(RestClient client) {
-				if (client == null) {
-			    	Log.i("SalesforceDroidGapActivity.authenticate", "authenticatedRestClient called with null client");
-					SalesforceSDKManager.getInstance().logout(SalesforceDroidGapActivity.this);
-	            } else {
-			    	Log.i("SalesforceDroidGapActivity.authenticate", "authenticatedRestClient called with actual client");
-	                SalesforceDroidGapActivity.this.client = client;
+            @Override
+            public void authenticatedRestClient(RestClient client) {
+                if (client == null) {
+                    SalesforceHybridLogger.i(TAG, "authenticate callback triggered with null client");
+                    logout(null);
+                } else {
+                    SalesforceHybridLogger.i(TAG, "authenticate callback triggered with actual client");
+                    SalesforceDroidGapActivity.this.client = client;
 
-	                /*
+                    /*
                      * Do a cheap REST call to refresh the access token if needed.
                      * If the login took place a while back (e.g. the already logged
                      * in application was restarted), then the returned session ID
@@ -316,83 +353,127 @@ public class SalesforceDroidGapActivity extends CordovaActivity {
                      * but a stale session ID will cause the WebView to redirect
                      * to the web login.
                      */
-	                SalesforceDroidGapActivity.this.client.sendAsync(RestRequest.getRequestForResources(API_VERSION), new AsyncRequestCallback() {
+                    SalesforceDroidGapActivity.this.client.sendAsync(RestRequest.getRequestForUserInfo(), new AsyncRequestCallback() {
 
                         @Override
                         public void onSuccess(RestRequest request, RestResponse response) {
-
-                        	/*
-                        	 * The client instance being used here needs to be
-                        	 * refreshed, to ensure we use the new access token. 
-                        	 */
-                        	SalesforceDroidGapActivity.this.client = SalesforceDroidGapActivity.this.clientManager.peekRestClient();
-                        	setSidCookies();
-                            loadVFPingPage();
-                            if (callbackContext != null) {
-                                callbackContext.success(getJSONCredentials());
-                            }
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    /*
+                                     * The client instance being used here needs to be
+                                     * refreshed, to ensure we use the new access token.
+                                     */
+                                    SalesforceDroidGapActivity.this.client = SalesforceDroidGapActivity.this.clientManager.peekRestClient();
+                                    setSidCookies();
+                                    loadVFPingPage();
+                                    getAuthCredentials(callbackContext);
+                                }
+                            });
                         }
 
                         @Override
                         public void onError(Exception exception) {
-                        	if (callbackContext != null) {
-                            	callbackContext.error(exception.getMessage());
-                        	}
+                            if (callbackContext != null) {
+                                callbackContext.error(exception.getMessage());
+                            }
                         }
                     });
-	            }
-			}
-    	});
+                }
+            }
+        });
     }
-    
+
+    /**
+     * Get json for credentials
+     *
+     * @param callbackContext
+     */
+    public void getAuthCredentials(CallbackContext callbackContext) {
+        SalesforceHybridLogger.i(TAG, "getAuthCredentials called");
+        if (client != null) {
+            JSONObject credentials = client.getJSONCredentials();
+            if (callbackContext != null) {
+                callbackContext.success(credentials);
+            }
+        } else {
+            if (callbackContext != null) {
+                callbackContext.error("Never authenticated");
+            }
+        }
+    }
+
     /**
      * If an action causes a redirect to the login page, this method will be called.
      * It causes the session to be refreshed and reloads url through the front door.
+     *
      * @param url the page to load once the session has been refreshed.
      */
     public void refresh(final String url) {
-        Log.i("SalesforceDroidGapActivity.refresh", "refresh called");
-        client.sendAsync(RestRequest.getRequestForResources(API_VERSION), new AsyncRequestCallback() {
+        SalesforceHybridLogger.i(TAG, "refresh called");
 
-			@Override
-			public void onSuccess(RestRequest request, RestResponse response) {
-				Log.i("SalesforceDroidGapActivity.refresh", "Refresh succeeded");
+        /*
+         * If client is null at this point, authentication hasn't been performed yet.
+         * We need to trigger authentication, and recreate the webview in the
+         * callback, to load the page correctly. This handles some corner cases
+         * involving hitting the back button when authentication is in progress.
+         */
+        if (client == null) {
+            clientManager.getRestClient(this, new RestClientCallback() {
 
-            	/*
-            	 * The client instance being used here needs to be
-            	 * refreshed, to ensure we use the new access token. 
-            	 */
-				SalesforceDroidGapActivity.this.client = SalesforceDroidGapActivity.this.clientManager.peekRestClient();
-				setSidCookies();
-				loadVFPingPage();
-				final String frontDoorUrl = getFrontDoorUrl(url, true);
-				loadUrl(frontDoorUrl);
-			}
+                @Override
+                public void authenticatedRestClient(RestClient client) {
+                    recreate();
+                }
+            });
+            return;
+        }
+        client.sendAsync(RestRequest.getRequestForUserInfo(), new AsyncRequestCallback() {
 
-			@Override
-			public void onError(Exception exception) {
-				Log.w("SalesforceDroidGapActivity.refresh", "Refresh failed - " + exception);
+            @Override
+            public void onSuccess(RestRequest request, RestResponse response) {
+                SalesforceHybridLogger.i(TAG, "refresh callback - refresh succeeded");
+                runOnUiThread(new Runnable() {
 
-				// Only logout if we are NOT offline
-				if (!(exception instanceof NoNetworkException)) {
-					SalesforceSDKManager.getInstance().logout(SalesforceDroidGapActivity.this);
-				}
-			}
-		});
-    }        
+                    @Override
+                    public void run() {
+                        /*
+                         * The client instance being used here needs to be
+                         * refreshed, to ensure we use the new access token.
+                         */
+                        SalesforceDroidGapActivity.this.client = SalesforceDroidGapActivity.this.clientManager.peekRestClient();
+                        setSidCookies();
+                        loadVFPingPage();
+                        final String frontDoorUrl = getFrontDoorUrl(url, BootConfig.isAbsoluteUrl(url));
+                        loadUrl(frontDoorUrl);
+                    }
+                });
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                SalesforceHybridLogger.w(TAG, "refresh callback - refresh failed", exception);
+
+                // Only logout if we are NOT offline
+                if (!(exception instanceof NoNetworkException)) {
+                    logout(null);
+                }
+            }
+        });
+    }
 
     /**
      * Loads the VF ping page and sets cookies.
      */
     private void loadVFPingPage() {
-    	if (!bootconfig.isLocal()) {
-        	final ClientInfo clientInfo = SalesforceDroidGapActivity.this.client.getClientInfo();
+        if (!bootconfig.isLocal()) {
+            final ClientInfo clientInfo = SalesforceDroidGapActivity.this.client.getClientInfo();
             URI instanceUrl = null;
             if (clientInfo != null) {
-            	instanceUrl = clientInfo.getInstanceUrl();
+                instanceUrl = clientInfo.getInstanceUrl();
             }
             setVFCookies(instanceUrl);
-    	}
+        }
     }
 
     /**
@@ -401,179 +482,173 @@ public class SalesforceDroidGapActivity extends CordovaActivity {
      * @param instanceUrl Instance URL.
      */
     private static void setVFCookies(URI instanceUrl) {
-    	if (instanceUrl != null) {
-        	final WebView view = new WebView(SalesforceSDKManager.getInstance().getAppContext());
-        	view.setVisibility(View.GONE);
-        	view.setWebViewClient(new WebViewClient() {
+        if (instanceUrl != null) {
+            final WebView view = new WebView(SalesforceSDKManager.getInstance().getAppContext());
+            view.setVisibility(View.GONE);
+            view.setWebViewClient(new WebViewClient() {
 
-        		@Override
-        		public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                	final CookieManager cookieMgr = CookieManager.getInstance();
+                @Override
+                public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                    final CookieManager cookieMgr = CookieManager.getInstance();
                     cookieMgr.setAcceptCookie(true);
                     SalesforceSDKManager.getInstance().syncCookies();
-        			return true;
-        		}
-        	});
-        	view.loadUrl(instanceUrl.toString() + "/visualforce/session?url=/apexpages/utils/ping.apexp&autoPrefixVFDomain=true");
-    	}
+                    return true;
+                }
+            });
+            view.loadUrl(instanceUrl.toString() + "/visualforce/session?url=/apexpages/utils/ping.apexp&autoPrefixVFDomain=true");
+        }
     }
 
     /**
      * Load local start page
      */
     public void loadLocalStartPage() {
-    	assert bootconfig.isLocal();
-    	String startPage = bootconfig.getStartPage();
-    	Log.i("SalesforceDroidGapActivity.loadLocalStartPage", "loading: " + startPage);
-    	loadUrl("file:///android_asset/www/" + startPage);
-    	webAppLoaded = true;
-    }		
+        assert bootconfig.isLocal();
+        String startPage = bootconfig.getStartPage();
+        SalesforceHybridLogger.i(TAG, "loadLocalStartPage called - loading: " + startPage);
+        loadUrl("file:///android_asset/www/" + startPage);
+        webAppLoaded = true;
+    }
 
     /**
      * Load remote start page (front-doored)
      */
     public void loadRemoteStartPage() {
-    	assert !bootconfig.isLocal();
-    	String startPage = bootconfig.getStartPage();
-    	Log.i("SalesforceDroidGapActivity.loadRemoteStartPage", "loading: " + startPage);
-		String url = getFrontDoorUrl(startPage, false);
-		loadUrl(url);
-    	webAppLoaded = true;
+        loadRemoteStartPage(bootconfig.getStartPage(), true);
     }
-    
+
+    /**
+     * Load the remote start page.
+     * @param startPageUrl The start page to load.
+     * @param loadThroughFrontDoor Whether or not to load through front-door.
+     */
+    private void loadRemoteStartPage(String startPageUrl, boolean loadThroughFrontDoor) {
+        assert !bootconfig.isLocal();
+        String url = startPageUrl;
+        if (loadThroughFrontDoor) {
+            url = getFrontDoorUrl(url, BootConfig.isAbsoluteUrl(url));
+        }
+        SalesforceHybridLogger.i(TAG, "loadRemoteStartPage called - loading: " + url);
+        loadUrl(url);
+        webAppLoaded = true;
+    }
+
     /**
      * Returns the front-doored URL of a URL passed in.
      *
-     * @param url URL to be front-doored.
+     * @param url      URL to be front-doored.
      * @param isAbsUrl True - if the URL should be used as is, False - otherwise.
      * @return Front-doored URL.
      */
     public String getFrontDoorUrl(String url, boolean isAbsUrl) {
-		String frontDoorUrl = client.getClientInfo().getInstanceUrlAsString() + "/secur/frontdoor.jsp?";
-		List<NameValuePair> params = new LinkedList<NameValuePair>();
-		params.add(new BasicNameValuePair("sid", client.getAuthToken()));
 
-		/*
-		 * We need to use the absolute URL in some cases and relative URL in some
-		 * other cases, because of differences between instance URL and community
-		 * URL. Community URL can be custom and the logic of determining which
-		 * URL to use is in the 'resolveUrl' method in 'ClientInfo'.
-		 */
+        /*
+         * We need to use the absolute URL in some cases and relative URL in some
+         * other cases, because of differences between instance URL and community
+         * URL. Community URL can be custom and the logic of determining which
+         * URL to use is in the 'resolveUrl' method in 'ClientInfo'.
+         */
         url = (isAbsUrl ? url : client.getClientInfo().resolveUrl(url).toString());
-		params.add(new BasicNameValuePair("retURL", url));
-		params.add(new BasicNameValuePair("display", "touch"));
-		frontDoorUrl += URLEncodedUtils.format(params, "UTF-8");
-    	return frontDoorUrl;
+        final HttpUrl frontDoorUrl = HttpUrl.parse(client.getClientInfo().getInstanceUrlAsString()
+                + "/secur/frontdoor.jsp?").newBuilder()
+                .addQueryParameter("sid", client.getAuthToken())
+                .addQueryParameter("retURL", url)
+                .addQueryParameter("display", "touch")
+                .build();
+        return frontDoorUrl.toString();
     }
 
-	/**
-	 * Load cached start page
-	 */
-	private void loadCachedStartPage() {
-		String url = SalesforceWebViewClientHelper.getAppHomeUrl(this);
-		loadUrl(url);
-    	webAppLoaded = true;
-	}
-    
     /**
-     * Load error page 
+     * Load cached start page
+     */
+    private void loadCachedStartPage() {
+        String url = SalesforceWebViewClientHelper.getAppHomeUrl(this);
+        loadUrl(url);
+        webAppLoaded = true;
+    }
+
+    /**
+     * Load error page
      */
     public void loadErrorPage() {
-    	Log.i("SalesforceDroidGapActivity.getErrorPageUrl", "getErrorPageUrl called");
-    	String errorPage = bootconfig.getErrorPage();
-    	Log.i("SalesforceDroidGapActivity.getErrorPageUrl", "local error page: " + errorPage);
-		loadUrl("file:///android_asset/www/" + errorPage);
-    }
-
-	/**
-	 * Returns the WebView being used.
-	 *
-	 * @return WebView being used.
-	 */
-	public CordovaWebView getAppView() {
-		return appView;
-	}
-
-   /**
-    * Set cookies on cookie manager.
-    */
-   private void setSidCookies() {
-       Log.i("SalesforceDroidGapActivity.setSidCookies", "setting cookies");
-       CookieManager cookieMgr = CookieManager.getInstance();
-       cookieMgr.setAcceptCookie(true);  // Required to set additional cookies that the auth process will return.
-       SalesforceSDKManager.getInstance().removeSessionCookies();
-       SystemClock.sleep(250); // removeSessionCookies kicks out a thread - let it finish
-       String accessToken = client.getAuthToken();
-       addSidCookieForInstance(cookieMgr,".salesforce.com", accessToken);
-       SalesforceSDKManager.getInstance().syncCookies();
-   }
-
-   private void addSidCookieForInstance(CookieManager cookieMgr, String domain, String sid) {
-	   final ClientInfo clientInfo = SalesforceDroidGapActivity.this.client.getClientInfo();
-       URI instanceUrl = null;
-       if (clientInfo != null) {
-    	   instanceUrl = clientInfo.getInstanceUrl();
-       }
-       String host = null;
-       if (instanceUrl != null) {
-    	   host = instanceUrl.getHost();
-       }
-       if (host != null) {
-    	   addSidCookieForDomain(cookieMgr, host, sid);
-       }
-   }
-
-   private void addSidCookieForDomain(CookieManager cookieMgr, String domain, String sid) {
-	   String cookieStr = "sid=" + sid;
-       cookieMgr.setCookie(domain, cookieStr);
-   }
-
-   /**
-    * @return credentials as JSONObject
-    */
-   public JSONObject getJSONCredentials() {
-	   if (client != null) {
-	       ClientInfo clientInfo = client.getClientInfo();
-	       Map<String, String> data = new HashMap<String, String>();
-	       data.put(ACCESS_TOKEN, client.getAuthToken());
-	       data.put(REFRESH_TOKEN, client.getRefreshToken());
-	       data.put(USER_ID, clientInfo.userId);
-	       data.put(ORG_ID, clientInfo.orgId);
-	       data.put(CLIENT_ID, clientInfo.clientId);
-	       data.put(LOGIN_URL, clientInfo.loginUrl.toString());
-	       data.put(IDENTITY_URL, clientInfo.identityUrl.toString());
-	       data.put(INSTANCE_URL, clientInfo.instanceUrl.toString());
-	       data.put(USER_AGENT, SalesforceSDKManager.getInstance().getUserAgent());
-	       data.put(COMMUNITY_ID, clientInfo.communityId);
-	       data.put(COMMUNITY_URL, clientInfo.communityUrl);
-	       return new JSONObject(data);
-	   } else {
-		   return null;
-	   }
-   }
-
-    /**
-     * Exception thrown if initial web page load fails.
-     */
-    public static class HybridAppLoadException extends RuntimeException {
-
-		public HybridAppLoadException(String msg) {
-			super(msg);
-		}
-
-		private static final long serialVersionUID = 1L;
+        String errorPage = bootconfig.getErrorPage();
+        SalesforceHybridLogger.i(TAG, "getErrorPageUrl called - local error page: " + errorPage);
+        loadUrl("file:///android_asset/www/" + errorPage);
     }
 
     /**
-     * Acts on the user switch event.
+     * Returns the WebView being used.
      *
-     * @author bhariharan
+     * @return WebView being used.
      */
-    private class DroidGapUserSwitchReceiver extends UserSwitchReceiver {
+    public CordovaWebView getAppView() {
+        return appView;
+    }
 
-		@Override
-		protected void onUserSwitch() {
-			restartIfUserSwitched();
-		}
+    /**
+     * Set cookies on cookie manager.
+     */
+    private void setSidCookies() {
+        SalesforceHybridLogger.i(TAG, "setSidCookies called");
+        CookieManager cookieMgr = CookieManager.getInstance();
+        cookieMgr.setAcceptCookie(true);  // Required to set additional cookies that the auth process will return.
+        SalesforceSDKManager.getInstance().removeSessionCookies();
+        SystemClock.sleep(250); // removeSessionCookies kicks out a thread - let it finish
+        String accessToken = client.getAuthToken();
+        addSidCookieForInstance(cookieMgr, accessToken);
+        SalesforceSDKManager.getInstance().syncCookies();
+    }
+
+    private void addSidCookieForInstance(CookieManager cookieMgr, String sid) {
+        final ClientInfo clientInfo = SalesforceDroidGapActivity.this.client.getClientInfo();
+        URI instanceUrl = null;
+        if (clientInfo != null) {
+            instanceUrl = clientInfo.getInstanceUrl();
+        }
+        String host = null;
+        if (instanceUrl != null) {
+            host = instanceUrl.getHost();
+        }
+        if (host != null) {
+            addSidCookieForDomain(cookieMgr, host, sid);
+        }
+    }
+
+    private void addSidCookieForDomain(CookieManager cookieMgr, String domain, String sid) {
+        String cookieStr = "sid=" + sid;
+        cookieMgr.setCookie(domain, cookieStr);
+    }
+
+    @Override
+    public void onLogoutComplete() {
+    }
+
+    @Override
+    public void onUserSwitched() {
+        if (client != null) {
+            try {
+                RestClient currentClient = clientManager.peekRestClient();
+                if (currentClient != null && !currentClient.getClientInfo().userId.equals(client.getClientInfo().userId)) {
+                    this.recreate();
+                }
+            } catch (AccountInfoNotFoundException e) {
+                SalesforceHybridLogger.i(TAG, "restartIfUserSwitched - no user account found");
+            }
+        }
+    }
+
+    private class FetchAuthConfigTask extends AsyncTask<Void, Void, Void> {
+
+        @Override
+        protected Void doInBackground(Void... nothings) {
+            final String loginServer = SalesforceHybridSDKManager.getInstance().getLoginServerManager().getSelectedLoginServer().url.trim();
+            if (loginServer.equals(LoginServerManager.PRODUCTION_LOGIN_URL) ||
+                    loginServer.equals(LoginServerManager.SANDBOX_LOGIN_URL) ||
+                    !URLUtil.isHttpsUrl(loginServer) || HttpUrl.parse(loginServer) == null) {
+                return null;
+            }
+            authConfig = AuthConfigUtil.getMyDomainAuthConfig(loginServer);
+            return null;
+        }
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, salesforce.com, inc.
+ * Copyright (c) 2011-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -30,15 +30,18 @@ import android.app.Application;
 
 import com.salesforce.androidsdk.phonegap.ui.SalesforceHybridTestActivity;
 import com.salesforce.androidsdk.ui.LoginActivity;
+import com.salesforce.androidsdk.util.test.TestCredentials;
 
 /**
- * Test application for smart store plugin.
+ * Test application for Salesforce Cordova plugins.
  */
 public class SalesforceHybridTestApp extends Application {
 
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		SalesforceHybridSDKManager.initHybrid(getApplicationContext(), null, SalesforceHybridTestActivity.class, LoginActivity.class);
+		SalesforceHybridSDKManager.initHybrid(getApplicationContext(),
+				SalesforceHybridTestActivity.class, LoginActivity.class);
+		TestCredentials.init(this);
 	}
 }

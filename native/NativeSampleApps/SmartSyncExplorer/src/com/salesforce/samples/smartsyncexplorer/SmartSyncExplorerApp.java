@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -39,8 +39,14 @@ public class SmartSyncExplorerApp extends Application {
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		SmartSyncSDKManager.initNative(getApplicationContext(), new KeyImpl(),
-				MainActivity.class);
+		SmartSyncSDKManager.initNative(getApplicationContext(), MainActivity.class);
+
+		/*
+         * Uncomment the following line to enable IDP login flow. This will allow the user to
+         * either authenticate using the current app or use a designated IDP app for login.
+         * Replace 'idpAppURIScheme' with the URI scheme of the IDP app meant to be used.
+         */
+        // SmartSyncSDKManager.getInstance().setIDPAppURIScheme(idpAppURIScheme);
 
 		/*
 		 * Un-comment the line below to enable push notifications in this app.

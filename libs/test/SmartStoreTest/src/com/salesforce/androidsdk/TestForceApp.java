@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, salesforce.com, inc.
+ * Copyright (c) 2011-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -28,7 +28,6 @@ package com.salesforce.androidsdk;
 
 import android.app.Application;
 
-import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager;
 
 /**
@@ -40,8 +39,8 @@ public class TestForceApp extends Application {
 
     @Override
     public void onCreate() {
-    	SmartStoreSDKManager.initNative(getApplicationContext(), new KeyImpl(), MainActivity.class);
+    	SmartStoreSDKManager.initNative(getApplicationContext(), MainActivity.class);
     	super.onCreate();
-    	SalesforceSDKManager.getInstance().setIsTestRun(true);
+    	SmartStoreSDKManager.getInstance().setIsTestRun(true);
     }
 }

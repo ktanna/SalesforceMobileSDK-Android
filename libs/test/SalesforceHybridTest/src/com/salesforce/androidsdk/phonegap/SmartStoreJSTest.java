@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, salesforce.com, inc.
+ * Copyright (c) 2011-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,30 +26,34 @@
  */
 package com.salesforce.androidsdk.phonegap;
 
+import androidx.test.filters.MediumTest;
+
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
+
 import java.util.Arrays;
 import java.util.List;
 
-import com.salesforce.androidsdk.phonegap.util.test.JSTestCase;
-
 /**
- * Running javascript tests for SmartStore plugin
+ * Running javascript tests for SmartStore plugin.
  */
+@RunWith(Parameterized.class)
+@MediumTest
 public class SmartStoreJSTest extends JSTestCase {
 
-    public SmartStoreJSTest() {
-        super("SmartStoreTestSuite");
-    }
-    
-    @Override
-    protected int getMaxRuntimeInSecondsForTest(String testName) {
-        return 10;
-    }
+    private static final String JS_SUITE = "SmartStoreTestSuite";
 
-    @Override
-    public List<String> getTestNames() {
-        return Arrays.asList(new String[] {
+    @Parameterized.Parameter
+    public String testName;
+
+    @Parameterized.Parameters(name = "{0}")
+    public static List<String> data() {
+        return Arrays.asList(new String[]{
                 "testGetDatabaseSize",
                 "testRegisterRemoveSoup",
+                "testRegisterWithSpec",
                 "testRegisterRemoveSoupGlobalStore",
                 "testRegisterBogusSoup",
                 "testRegisterSoupNoIndices",
@@ -58,6 +62,7 @@ public class SmartStoreJSTest extends JSTestCase {
                 "testUpsertToNonexistentSoup",
                 "testRetrieveSoupEntries",
                 "testRemoveFromSoup",
+                "testRemoveFromSoupByQuery",
                 "testQuerySoupWithExactQuery",
                 "testQuerySoupWithAllQueryDescending",
                 "testQuerySoupWithRangeQueryWithOrderPath",
@@ -87,200 +92,27 @@ public class SmartStoreJSTest extends JSTestCase {
                 "testGetSoupIndexSpecsWithBogusSoupName",
                 "testAlterSoupNoReIndexing",
                 "testAlterSoupWithReIndexing",
+                "testAlterSoupWithSpecNoReIndexing",
+                "testAlterSoupWithSpecWithReIndexing",
                 "testAlterSoupWithBogusSoupName",
                 "testReIndexSoup",
                 "testClearSoup",
                 "testFullTextSearchAgainstArrayNode",
                 "testLikeQueryAgainstArrayNode",
                 "testExactQueryAgainstArrayNode",
-                "testSmartQueryAgainstArrayNode"
+                "testSmartQueryAgainstArrayNode",
+                "testCreateMultipleGlobalStores",
+                "testCreateMultipleUserStores"
         });
     }
-    
 
-    public void testGetDatabaseSize() {
-        runTest("testGetDatabaseSize");
-    }
-
-    public void testRegisterRemoveSoup()  {
-        runTest("testRegisterRemoveSoup");
+    @BeforeClass
+    public static void runJSTestSuite() throws InterruptedException {
+        JSTestCase.runJSTestSuite(JS_SUITE, data(), 30);
     }
 
-    public void testRegisterRemoveSoupGlobalStore()  {
-        runTest("testRegisterRemoveSoupGlobalStore");
-    }
-
-    public void testRegisterBogusSoup()  {
-        runTest("testRegisterBogusSoup");
-    }
-
-    public void testRegisterSoupNoIndices()  {
-        runTest("testRegisterSoupNoIndices");
-    }
-
-    public void testUpsertSoupEntries()  {
-        runTest("testUpsertSoupEntries");
-    }
-
-    public void testUpsertSoupEntriesWithExternalId()  {
-        runTest("testUpsertSoupEntriesWithExternalId");
-    }
-    
-    public void testUpsertToNonexistentSoup()  {
-        runTest("testUpsertToNonexistentSoup");
-    }
-
-    public void testRetrieveSoupEntries()  {
-        runTest("testRetrieveSoupEntries");
-    }
-
-    public void testRemoveFromSoup()  {
-        runTest("testRemoveFromSoup");
-    }
-
-    public void testQuerySoupWithExactQuery()  {
-        runTest("testQuerySoupWithExactQuery");
-    }
-
-    public void testQuerySoupWithAllQueryDescending()  {
-        runTest("testQuerySoupWithAllQueryDescending");
-    }
-
-    public void testQuerySoupWithRangeQueryWithOrderPath() {
-        runTest("testQuerySoupWithRangeQueryWithOrderPath");
-    }
-
-    public void testQuerySoupBadQuerySpec()  {
-        runTest("testQuerySoupBadQuerySpec");
-    }
-
-    public void testQuerySoupEndKeyNoBeginKey()  {
-        runTest("testQuerySoupEndKeyNoBeginKey");
-    }
-
-    public void testQuerySoupBeginKeyNoEndKey()  {
-        runTest("testQuerySoupBeginKeyNoEndKey");
-    }
-
-    public void testManipulateCursor()  {
-        runTest("testManipulateCursor");
-    }
-
-    public void testMoveCursorToPreviousPageFromFirstPage() {
-        runTest("testMoveCursorToPreviousPageFromFirstPage");
-    }
-
-    public void testMoveCursorToNextPageFromLastPage() {
-        runTest("testMoveCursorToNextPageFromLastPage");
-    }
-
-    public void testArbitrarySoupNames()  {
-        runTest("testArbitrarySoupNames");
-    }
-
-    public void testQuerySpecFactories()  {
-        runTest("testQuerySpecFactories");
-    }
-
-    public void testLikeQuerySpecStartsWith()  {
-        runTest("testLikeQuerySpecStartsWith");
-    }
-
-    public void testLikeQuerySpecEndsWith()  {
-        runTest("testLikeQuerySpecEndsWith");
-    }
-
-    public void testLikeQueryInnerText()  {
-        runTest("testLikeQueryInnerText");
-    }
-
-    public void testFullTextSearch() {
-        runTest("testFullTextSearch");
-    }
-
-    public void testCompoundQueryPath()  {
-        runTest("testCompoundQueryPath");
-    }
-
-    public void testEmptyQuerySpec()  {
-        runTest("testEmptyQuerySpec");
-    }
-
-    public void testIntegerQuerySpec()  {
-        runTest("testIntegerQuerySpec");
-    }
-    
-    public void testSmartQueryWithCount() {
-        runTest("testSmartQueryWithCount");
-    }
-
-    public void testSmartQueryWithSpecialFields() {
-        runTest("testSmartQueryWithSpecialFields");
-    }
-
-    public void testSmartQueryWithIntegerCompare() {
-        runTest("testSmartQueryWithIntegerCompare");
-    }
-
-    public void testSmartQueryWithMultipleFieldsAndWhereInClause() {
-        runTest("testSmartQueryWithMultipleFieldsAndWhereInClause");
-    }
-
-    public void testSmartQueryWithSingleFieldAndWhereInClause() {
-        runTest("testSmartQueryWithSingleFieldAndWhereInClause");
-    }
-
-    public void testSmartQueryWithWhereLikeClause() {
-        runTest("testSmartQueryWithWhereLikeClause");
-    }
-
-    public void testSmartQueryWithWhereLikeClauseOrdered() {
-        runTest("testSmartQueryWithWhereLikeClauseOrdered");
-    }
-
-    public void testGetSoupIndexSpecs() {
-        runTest("testGetSoupIndexSpecs");
-    }
-    
-    public void testGetSoupIndexSpecsWithBogusSoupName() {
-        runTest("testGetSoupIndexSpecsWithBogusSoupName");
-    }
-    
-
-    public void testAlterSoupNoReIndexing() {
-        runTest("testAlterSoupNoReIndexing");
-    }
-
-    public void testAlterSoupWithReIndexing() {
-        runTest("testAlterSoupWithReIndexing");
-    }
-
-    public void testAlterSoupWithBogusSoupName() {
-        runTest("testAlterSoupWithBogusSoupName");
-    }
-
-    public void testReIndexSoup() {
-        runTest("testReIndexSoup");
-    }
-
-    public void testClearSoup() {
-        runTest("testClearSoup");
-    }
-
-
-    public void testFullTextSearchAgainstArrayNode() {
-        runTest("testFullTextSearchAgainstArrayNode");
-    }
-
-    public void testLikeQueryAgainstArrayNode() {
-        runTest("testLikeQueryAgainstArrayNode");
-    }
-
-    public void testExactQueryAgainstArrayNode() {
-        runTest("testExactQueryAgainstArrayNode");
-    }
-
-    public void testSmartQueryAgainstArrayNode() {
-        runTest("testSmartQueryAgainstArrayNode");
+    @Test
+    public void test() {
+        runTest(JS_SUITE, testName);
     }
 }

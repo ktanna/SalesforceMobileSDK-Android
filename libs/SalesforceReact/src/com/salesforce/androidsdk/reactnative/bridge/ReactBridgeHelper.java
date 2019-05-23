@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, salesforce.com, inc.
+ * Copyright (c) 2015-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -41,31 +41,31 @@ import java.util.Map;
 
 public class ReactBridgeHelper  {
 
-    public static void invokeSuccess(Callback successCallback, JSONObject json) {
+    public static void invoke(Callback callback, JSONObject json) {
         // XXX it would be better to user a NativeMap
         //     for now we serialize the object and do a JSON.parse(result) on the javascript side
-        successCallback.invoke(json.toString());
+        callback.invoke(json == null ? null : json.toString());
     }
 
-    public static void invokeSuccess(Callback successCallback, JSONArray json) {
+    public static void invoke(Callback callback, JSONArray json) {
         // XXX it would be better to user a NativeArray
         //     for now we serialize the object and do a JSON.parse(result) on the javascript side
-        successCallback.invoke(json.toString());
+        callback.invoke(json == null ? null : json.toString());
     }
 
-    public static void invokeSuccess(Callback successCallback, String value) {
+    public static void invoke(Callback callback, String value) {
         // XXX we need to turn "xyz" into "\"xyz\"" so that JSON.parse() returns "xyz"
-        successCallback.invoke("\"" + value + "\"");
+        callback.invoke("\"" + value + "\"");
     }
 
-    public static void invokeSuccess(Callback successCallback, boolean value) {
+    public static void invoke(Callback callback, boolean value) {
         // XXX we need to turn true|false into "true"|"false" so that JSON.parse() returns true|false
-        successCallback.invoke("" + value);
+        callback.invoke("" + value);
     }
 
-    public static void invokeSuccess(Callback successCallback, int value) {
+    public static void invoke(Callback callback, int value) {
         // XXX we need to turn 123 into "123" so that JSON.parse() returns 123
-        successCallback.invoke("" + value);
+        callback.invoke("" + value);
     }
 
 
@@ -98,7 +98,7 @@ public class ReactBridgeHelper  {
         return result;
     }
 
-    public static Map<String, String> toJavaStringMap(ReadableMap map) {
+    public static Map<String, String> toJavaStringStringMap(ReadableMap map) {
         Map<String, String> result = new HashMap<>();
         ReadableMapKeySetIterator iterator = map.keySetIterator();
         while (iterator.hasNextKey()) {
@@ -114,6 +114,24 @@ public class ReactBridgeHelper  {
         }
         return result;
     }
+
+    public static Map<String,Map<String,String>> toJavaStringMapMap(ReadableMap map) {
+        Map<String, Map<String, String>> result = new HashMap<>();
+        ReadableMapKeySetIterator iterator = map.keySetIterator();
+        while (iterator.hasNextKey()) {
+            String key = iterator.nextKey();
+            switch (map.getType(key)) {
+                case Map:
+                    result.put(key, toJavaStringStringMap(map.getMap(key)));
+                    break;
+                default:
+                    // Only expected maps
+                    break;
+            }
+        }
+        return result;
+    }
+
 
     public static List<String> toJavaStringList(ReadableArray array) {
         List<String> result = new ArrayList<>();

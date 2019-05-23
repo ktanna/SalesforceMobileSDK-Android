@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, salesforce.com, inc.
+ * Copyright (c) 2013-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,7 +26,7 @@
  */
 package com.salesforce.androidsdk.push;
 
-import android.os.Bundle;
+import com.google.firebase.messaging.RemoteMessage;
 
 /**
  * This interface represents a simple push notification received. The
@@ -37,5 +37,5 @@ import android.os.Bundle;
  */
 public interface PushNotificationInterface {
 
-	public void onPushMessageReceived(Bundle message);
+	void onPushMessageReceived(RemoteMessage message);
 }

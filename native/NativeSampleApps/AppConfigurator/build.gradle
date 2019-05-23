@@ -1,15 +1,19 @@
-apply plugin: 'android'
+apply plugin: 'com.android.application'
 
 dependencies {
-    compile project(':libs:SalesforceSDK')
+    api project(':libs:SalesforceSDK')
 }
 
 android {
-  compileSdkVersion 23
-  buildToolsVersion '23.0.1'
+    compileSdkVersion 28
+    buildToolsVersion '28.0.3'
+
+    defaultConfig {
+        targetSdkVersion 28
+        minSdkVersion 21
+    }
 
     sourceSets {
-
         main {
             manifest.srcFile 'AndroidManifest.xml'
             java.srcDirs = ['src']
@@ -19,7 +23,6 @@ android {
             res.srcDirs = ['res']
             assets.srcDirs = ['assets']
         }
-
     }
     packagingOptions {
         exclude 'META-INF/LICENSE'
@@ -27,4 +30,9 @@ android {
         exclude 'META-INF/DEPENDENCIES'
         exclude 'META-INF/NOTICE'
     }
+
+  lintOptions {
+    xmlReport true
+    abortOnError false
+  }
 }

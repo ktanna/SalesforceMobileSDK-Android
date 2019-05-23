@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, salesforce.com, inc.
+ * Copyright (c) 2015-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,32 +26,38 @@
  */
 package com.salesforce.samples.notesync;
 
+import android.util.Log;
+import android.util.Xml;
+
+import com.salesforce.androidsdk.app.SalesforceSDKManager;
+import com.salesforce.androidsdk.rest.ApiVersionStrings;
+import com.salesforce.androidsdk.rest.RestRequest;
+import com.salesforce.androidsdk.rest.RestResponse;
+import com.salesforce.androidsdk.smartsync.manager.SyncManager;
+import com.salesforce.androidsdk.smartsync.util.Constants;
+import com.salesforce.androidsdk.smartsync.target.SoqlSyncDownTarget;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+import org.xmlpull.v1.XmlPullParser;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.http.entity.StringEntity;
-import org.apache.http.protocol.HTTP;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-import org.xmlpull.v1.XmlPullParser;
-
-import android.util.Log;
-import android.util.Xml;
-
-import com.salesforce.androidsdk.rest.RestRequest;
-import com.salesforce.androidsdk.rest.RestResponse;
-import com.salesforce.androidsdk.smartsync.manager.SyncManager;
-import com.salesforce.androidsdk.smartsync.util.Constants;
-import com.salesforce.androidsdk.smartsync.util.SoqlSyncDownTarget;
+import okhttp3.MediaType;
+import okhttp3.RequestBody;
 
 /**
  * Target for sync defined by a SOQL query
  */
 public class ContentSoqlSyncDownTarget extends SoqlSyncDownTarget {
+
+    private static final MediaType MEDIA_TYPE_XML = MediaType.parse("text/xml; charset=utf-8");
+
 
     private static final String REQUEST_TEMPLATE = "<?xml version=\"1.0\"?>" +
             "<se:Envelope xmlns:se=\"http://schemas.xmlsoap.org/soap/envelope/\">" +
@@ -90,8 +96,8 @@ public class ContentSoqlSyncDownTarget extends SoqlSyncDownTarget {
 
     @Override
     public JSONArray startFetch(SyncManager syncManager, long maxTimeStamp) throws IOException, JSONException {
-        String queryToRun = maxTimeStamp > 0 ? SoqlSyncDownTarget.addFilterForReSync(getQuery(), maxTimeStamp) : getQuery();
-        syncManager.getRestClient().sendSync(RestRequest.getRequestForResources(syncManager.apiVersion)); // cheap call to refresh session
+        String queryToRun = maxTimeStamp > 0 ? SoqlSyncDownTarget.addFilterForReSync(getQuery(maxTimeStamp), getModificationDateFieldName(), maxTimeStamp) : getQuery(maxTimeStamp);
+        syncManager.getRestClient().sendSync(RestRequest.getRequestForUserInfo()); // cheap call to refresh session
         RestRequest request = buildQueryRequest(syncManager.getRestClient().getAuthToken(), queryToRun);
         RestResponse response = syncManager.sendSyncWithSmartSyncUserAgent(request);
         JSONArray records = parseSoapResponse(response);
@@ -141,11 +147,9 @@ public class ContentSoqlSyncDownTarget extends SoqlSyncDownTarget {
     private RestRequest buildSoapRequest(String sessionId, String body) throws UnsupportedEncodingException {
         Map<String, String> customHeaders = new HashMap<String, String>();
         customHeaders.put("SOAPAction", "\"\"");
-
-        StringEntity entity = new StringEntity(String.format(REQUEST_TEMPLATE, sessionId, body), HTTP.UTF_8);
-        entity.setContentType("text/xml");
-
-        return new RestRequest(RestRequest.RestMethod.POST, "/services/Soap/u/34.0", entity, customHeaders);
+        RequestBody requestBody = RequestBody.create(MEDIA_TYPE_XML, String.format(REQUEST_TEMPLATE, sessionId, body));
+        String version = ApiVersionStrings.getVersionNumber(SalesforceSDKManager.getInstance().getAppContext()).substring(1); /* no v */;
+        return new RestRequest(RestRequest.RestMethod.POST, "/services/Soap/u/" + version, requestBody, customHeaders);
     }
 
 
@@ -225,7 +229,7 @@ public class ContentSoqlSyncDownTarget extends SoqlSyncDownTarget {
 
             totalSize = records.length();
         } catch (Exception e) {
-            Log.e("ContentSoqlSyncDownTarget:parseSoapResponse", "Parsing failed", e);
+            Log.e("ContentSoqlSyncDownT..t", "parseSoapResponse - Parsing failed", e);
         }
 
         return records;

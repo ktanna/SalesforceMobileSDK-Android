@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, salesforce.com, inc.
+ * Copyright (c) 2013-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -27,135 +27,63 @@
 package com.salesforce.androidsdk.ui;
 
 import android.app.ExpandableListActivity;
-import android.content.IntentFilter;
 import android.os.Bundle;
-
-import com.salesforce.androidsdk.accounts.UserAccountManager;
-import com.salesforce.androidsdk.app.SalesforceSDKManager;
-import com.salesforce.androidsdk.rest.ClientManager;
-import com.salesforce.androidsdk.rest.ClientManager.LoginOptions;
-import com.salesforce.androidsdk.rest.ClientManager.RestClientCallback;
-import com.salesforce.androidsdk.rest.RestClient;
-import com.salesforce.androidsdk.security.PasscodeManager;
-import com.salesforce.androidsdk.util.EventsObservable;
-import com.salesforce.androidsdk.util.EventsObservable.EventType;
-import com.salesforce.androidsdk.util.UserSwitchReceiver;
+import android.view.KeyEvent;
 
 /**
  * Abstract base class for all Salesforce expandable list activities.
  *
  * @author bhariharan
  */
-public abstract class SalesforceExpandableListActivity extends ExpandableListActivity {
+public abstract class SalesforceExpandableListActivity extends ExpandableListActivity implements SalesforceActivityInterface {
 
-	private PasscodeManager passcodeManager;
-    private UserSwitchReceiver userSwitchReceiver;
+	private final SalesforceActivityDelegate delegate;
 
-	/**
-	 * Method that is called after the activity resumes once we have a RestClient.
-	 *
-	 * @param client RestClient instance.
-	 */
-	public abstract void onResume(RestClient client);
+	public SalesforceExpandableListActivity() {
+		super();
+		delegate = new SalesforceActivityDelegate(this);
+	}
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
-
-		// Gets an instance of the passcode manager.
-		passcodeManager = SalesforceSDKManager.getInstance().getPasscodeManager();
-        userSwitchReceiver = new ActivityUserSwitchReceiver();
-        registerReceiver(userSwitchReceiver, new IntentFilter(UserAccountManager.USER_SWITCH_INTENT_ACTION));
-
-		// Lets observers know that activity creation is complete.
-		EventsObservable.get().notifyEvent(EventType.MainActivityCreateComplete, this);
+		delegate.onCreate();
 	}
 
-	@Override 
+	@Override
 	public void onResume() {
 		super.onResume();
-
-		// Brings up the passcode screen if needed.
-		if (passcodeManager.onResume(this)) {
-
-			// Gets login options.
-			final String accountType = SalesforceSDKManager.getInstance().getAccountType();
-	    	final LoginOptions loginOptions = SalesforceSDKManager.getInstance().getLoginOptions();
-
-			// Gets a rest client.
-			new ClientManager(this, accountType, loginOptions, SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked()).getRestClient(this, new RestClientCallback() {
-
-				@Override
-				public void authenticatedRestClient(RestClient client) {
-					if (client == null) {
-						SalesforceSDKManager.getInstance().logout(SalesforceExpandableListActivity.this);
-						return;
-					}
-					onResume(client);
-
-					// Lets observers know that rendition is complete.
-					EventsObservable.get().notifyEvent(EventType.RenditionComplete);
-				}
-			});
-		}
+		delegate.onResume(true);
 	}
 
 	@Override
 	public void onUserInteraction() {
-		passcodeManager.recordUserInteraction();
+		delegate.onUserInteraction();
 	}
 
-    @Override
-    public void onPause() {
-        super.onPause();
-    	passcodeManager.onPause(this);
-    }
-
-    @Override
-    public void onDestroy() {
-    	unregisterReceiver(userSwitchReceiver);
-    	super.onDestroy();
-    }
-
-    /**
-     * Refreshes the client if the user has been switched.
-     */
-	protected void refreshIfUserSwitched() {
-		if (passcodeManager.onResume(this)) {
-
-			// Gets login options.
-			final String accountType = SalesforceSDKManager.getInstance().getAccountType();
-	    	final LoginOptions loginOptions = SalesforceSDKManager.getInstance().getLoginOptions();
-
-			// Gets a rest client.
-			new ClientManager(this, accountType, loginOptions,
-					SalesforceSDKManager.getInstance().shouldLogoutWhenTokenRevoked()).getRestClient(this, new RestClientCallback() {
-
-				@Override
-				public void authenticatedRestClient(RestClient client) {
-					if (client == null) {
-						SalesforceSDKManager.getInstance().logout(SalesforceExpandableListActivity.this);
-						return;
-					}
-					onResume(client);
-
-					// Lets observers know that rendition is complete.
-					EventsObservable.get().notifyEvent(EventType.RenditionComplete);
-				}
-			});
-		}
+	@Override
+	public void onPause() {
+		super.onPause();
+		delegate.onPause();
 	}
 
-    /**
-     * Acts on the user switch event.
-     *
-     * @author bhariharan
-     */
-    private class ActivityUserSwitchReceiver extends UserSwitchReceiver {
+	@Override
+	public void onDestroy() {
+		delegate.onDestroy();
+		super.onDestroy();
+	}
 
-		@Override
-		protected void onUserSwitch() {
-			refreshIfUserSwitched();
-		}
-    }
+	@Override
+	public boolean onKeyUp(int keyCode, KeyEvent event) {
+		return delegate.onKeyUp(keyCode, event) || super.onKeyUp(keyCode, event);
+	}
+
+	@Override
+	public void onLogoutComplete() {
+	}
+
+	@Override
+	public void onUserSwitched() {
+		delegate.onResume(true);
+	}
 }

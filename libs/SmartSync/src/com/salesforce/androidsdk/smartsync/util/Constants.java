@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -28,6 +28,7 @@ package com.salesforce.androidsdk.smartsync.util;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.Locale;
 
 /**
  * This class contains commonly used constants, such as field names,
@@ -39,9 +40,10 @@ public class Constants {
 
 	public static final String EMPTY_STRING = "";
 	public static final String NULL_STRING = "null";
-
     public static final String ID = "Id";
     public static final String NAME = "Name";
+    public static final String LAST_NAME = "LastName";
+    public static final String DESCRIPTION = "Description";
     public static final String TYPE = "Type";
     public static final String ATTRIBUTES = "attributes";
     public static final String RECENTLY_VIEWED = "RecentlyViewed";
@@ -52,50 +54,44 @@ public class Constants {
 	public static final String TOTAL_SIZE = "totalSize";
 	public static final String RECENT_ITEMS = "recentItems";
     public static final String LAST_MODIFIED_DATE = "LastModifiedDate";
+    public static final String CONTACTS = "Contacts";
+    public static final String ACCOUNT_KEY_PREFIX = "001";
 
     /**
      * Salesforce object types.
      */
     public static final String ACCOUNT = "Account";
-    public static final String LEAD = "Lead";
     public static final String CASE = "Case";
     public static final String OPPORTUNITY = "Opportunity";
-    public static final String TASK = "Task";
     public static final String CONTACT = "Contact";
-    public static final String CAMPAIGN = "Campaign";
-    public static final String CONTENT = "ContentDocument";
-    public static final String CONTENT_VERSION = "ContentVersion";
 
     /**
      * Salesforce object type field constants.
      */
     public static final String KEYPREFIX_FIELD = "keyPrefix";
-    public static final String NAME_FIELD = "name";
     public static final String LABEL_FIELD = "label";
-    public static final String LABELPLURAL_FIELD = "labelPlural";
-    public static final String FIELDS_FIELD = "fields";
-    public static final String LAYOUTABLE_FIELD = "layoutable";
-    public static final String SEARCHABLE_FIELD = "searchable";
-    public static final String HIDDEN_FIELD = "deprecatedAndHidden";
-    public static final String NAMEFIELD_FIELD = "nameField";
 
     /**
      * Salesforce object layout column field constants.
      */
-    public static final String LAYOUT_NAME_FIELD = "name";
-    public static final String LAYOUT_FIELD_FIELD = "field";
-    public static final String LAYOUT_FORMAT_FIELD = "format";
-    public static final String LAYOUT_LABEL_FIELD = "label";
+    public static final String LAYOUT_TYPE_COMPACT = "Compact";
 
     /**
-     * Salesforce object type layout field constants.
+     * Salesforce timestamp format.
      */
-    public static final String LAYOUT_LIMITS_FIELD = "limitRows";
-    public static final String LAYOUT_COLUMNS_FIELD = "searchColumns";
+    public static final DateFormat TIMESTAMP_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US);
 
     /**
-     * Salesforce timestamp format
+     * Enum for available data fetch modes.
+     *
+     * CACHE_ONLY - Fetches data from the cache and returns null if no data is available.
+     * CACHE_FIRST - Fetches data from the cache and falls back on the server if no data is available.
+     * SERVER_FIRST - Fetches data from the server and falls back on the cache if the server doesn't
+     * return data. The data fetched from the server is automatically cached.
      */
-    public static final DateFormat TIMESTAMP_FORMAT = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ");
-
+    public enum Mode {
+        CACHE_ONLY,
+        CACHE_FIRST,
+        SERVER_FIRST
+    }
 }

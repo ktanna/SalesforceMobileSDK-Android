@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,59 +26,81 @@
  */
 package com.salesforce.androidsdk.smartsync.manager;
 
-import java.net.URI;
-
 import android.app.Application;
 import android.app.Instrumentation;
 import android.content.Context;
-import android.test.InstrumentationTestCase;
+import androidx.test.platform.app.InstrumentationRegistry;
 
+import com.salesforce.androidsdk.analytics.logger.SalesforceLogger;
 import com.salesforce.androidsdk.auth.HttpAccess;
 import com.salesforce.androidsdk.auth.OAuth2;
 import com.salesforce.androidsdk.auth.OAuth2.TokenEndpointResponse;
+import com.salesforce.androidsdk.rest.ApiVersionStrings;
 import com.salesforce.androidsdk.rest.ClientManager;
 import com.salesforce.androidsdk.rest.ClientManager.LoginOptions;
 import com.salesforce.androidsdk.rest.RestClient;
 import com.salesforce.androidsdk.rest.RestClient.ClientInfo;
+import com.salesforce.androidsdk.rest.RestRequest;
+import com.salesforce.androidsdk.rest.RestResponse;
 import com.salesforce.androidsdk.smartstore.store.SmartStore;
-import com.salesforce.androidsdk.smartsync.TestCredentials;
 import com.salesforce.androidsdk.smartsync.TestForceApp;
 import com.salesforce.androidsdk.smartsync.app.SmartSyncSDKManager;
+import com.salesforce.androidsdk.smartsync.util.Constants;
+import com.salesforce.androidsdk.smartsync.util.SmartSyncLogger;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
 import com.salesforce.androidsdk.util.test.EventsListenerQueue;
+import com.salesforce.androidsdk.util.test.TestCredentials;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.junit.Assert;
+
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
- * Abstract super class for manager test classes
+ * Abstract super class for manager test classes.
  */
-abstract public class ManagerTestCase extends InstrumentationTestCase {
+abstract public class ManagerTestCase {
 
 	private static final String[] TEST_SCOPES = new String[] {"web"};
 	private static final String TEST_CALLBACK_URL = "test://callback";
 	private static final String TEST_AUTH_TOKEN = "test_auth_token";
+    private static final String LID = "id"; // lower case id in create response
 
-    Context targetContext;
-    EventsListenerQueue eq;
-    MetadataManager metadataManager;
-    CacheManager cacheManager;
-    SyncManager syncManager;
-    RestClient restClient;
-    HttpAccess httpAccess;
-    SmartStore smartStore;
+    protected Context targetContext;
+    protected EventsListenerQueue eq;
+    protected SmartSyncSDKManager sdkManager;
+    protected SyncManager syncManager;
+    protected SyncManager globalSyncManager;
+    protected RestClient restClient;
+    protected HttpAccess httpAccess;
+    protected SmartStore smartStore;
+    protected SmartStore globalSmartStore;
+    protected String apiVersion;
 
-    @Override
     public void setUp() throws Exception {
-        super.setUp();
-        targetContext = getInstrumentation().getTargetContext();
+        targetContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        apiVersion = ApiVersionStrings.getVersionNumber(targetContext);
         final Application app = Instrumentation.newApplication(TestForceApp.class,
         		targetContext);
-        getInstrumentation().callApplicationOnCreate(app);
-        TestCredentials.init(getInstrumentation().getContext());
+        InstrumentationRegistry.getInstrumentation().callApplicationOnCreate(app);
+        TestCredentials.init(InstrumentationRegistry.getInstrumentation().getContext());
         eq = new EventsListenerQueue();
         if (SmartSyncSDKManager.getInstance() == null) {
             eq.waitForEvent(EventType.AppCreateComplete, 5000);
         }
         final LoginOptions loginOptions = new LoginOptions(TestCredentials.LOGIN_URL,
-        		null, TEST_CALLBACK_URL, TestCredentials.CLIENT_ID, TEST_SCOPES);
+        		TEST_CALLBACK_URL, TestCredentials.CLIENT_ID, TEST_SCOPES);
         final ClientManager clientManager = new ClientManager(targetContext,
         		TestCredentials.ACCOUNT_TYPE, loginOptions, true);
         clientManager.createNewAccount(TestCredentials.ACCOUNT_NAME,
@@ -86,49 +108,166 @@ abstract public class ManagerTestCase extends InstrumentationTestCase {
         		TEST_AUTH_TOKEN, TestCredentials.INSTANCE_URL,
         		TestCredentials.LOGIN_URL, TestCredentials.IDENTITY_URL,
         		TestCredentials.CLIENT_ID, TestCredentials.ORG_ID,
-        		TestCredentials.USER_ID, null);
-    	MetadataManager.reset(null);
-    	CacheManager.hardReset(null);
+        		TestCredentials.USER_ID, null, null, null,
+                null, null, null, TestCredentials.PHOTO_URL, null, null);
     	SyncManager.reset();
-        metadataManager = MetadataManager.getInstance(null);
-        cacheManager = CacheManager.getInstance(null);
+    	sdkManager = SmartSyncSDKManager.getInstance();
+        smartStore = sdkManager.getSmartStore();
+        globalSmartStore = sdkManager.getGlobalSmartStore();
         syncManager = SyncManager.getInstance();
+        globalSyncManager = SyncManager.getInstance(null, null, globalSmartStore);
         restClient = initRestClient();
-        metadataManager.setRestClient(restClient);
         syncManager.setRestClient(restClient);
-        smartStore = cacheManager.getSmartStore();
+        SmartSyncLogger.setLogLevel(SalesforceLogger.Level.DEBUG);
     }
 
-    @Override
     public void tearDown() throws Exception {
         if (eq != null) {
             eq.tearDown();
             eq = null;
         }
-    	MetadataManager.reset(null);
-    	CacheManager.hardReset(null);
-        super.tearDown();
     }
-    
-    /**
-     * Initializes and returns a RestClient instance used for live calls by tests.
-     *
-     * @return RestClient instance.
-     */
+
     private RestClient initRestClient() throws Exception {
-        httpAccess = new HttpAccess(null, null);
+        httpAccess = new HttpAccess(null, "dummy-agent");
         final TokenEndpointResponse refreshResponse = OAuth2.refreshAuthToken(httpAccess,
-        		new URI(TestCredentials.INSTANCE_URL), TestCredentials.CLIENT_ID,
-        		TestCredentials.REFRESH_TOKEN);
+        		new URI(TestCredentials.LOGIN_URL), TestCredentials.CLIENT_ID,
+        		TestCredentials.REFRESH_TOKEN, null);
         final String authToken = refreshResponse.authToken;
-        final ClientInfo clientInfo = new ClientInfo(TestCredentials.CLIENT_ID,
-        		new URI(TestCredentials.INSTANCE_URL),
+        final ClientInfo clientInfo = new ClientInfo(new URI(TestCredentials.INSTANCE_URL),
         		new URI(TestCredentials.LOGIN_URL),
         		new URI(TestCredentials.IDENTITY_URL),
         		TestCredentials.ACCOUNT_NAME, TestCredentials.USERNAME,
         		TestCredentials.USER_ID, TestCredentials.ORG_ID, null, null,
-                null, null, null, null, null, null);
+                null, null, null, null, TestCredentials.PHOTO_URL, null, null);
         return new RestClient(clientInfo, authToken, httpAccess, null);
     }
-    
+
+    /**
+     * Helper methods to create "count" of test records
+     * @param count
+     * @return map of id to name for the created records
+     * @throws Exception
+     */
+    protected Map<String, String> createRecordsOnServer(int count, String objectType) throws Exception {
+        Map<String, Map <String, Object>> idToFields = createRecordsOnServerReturnFields(count, objectType, null);
+        Map<String, String> idToNames = new HashMap<>();
+        for (String id : idToFields.keySet()) {
+            idToNames.put(id, (String) idToFields.get(id).get(objectType == Constants.CONTACT ? Constants.LAST_NAME : Constants.NAME));
+        }
+        return idToNames;
+    }
+
+    /**
+     * Helper methods to create "count" of test records
+     * @param count
+     * @param additionalFields
+     * @return map of id to map of field name to field value for the created records
+     * @throws Exception
+     */
+    protected Map<String, Map<String, Object>> createRecordsOnServerReturnFields(int count, String objectType, Map<String, Object> additionalFields) throws Exception {
+        List<Map<String, Object>> listFields = buildFieldsMapForRecords(count, objectType, additionalFields);
+
+        // Prepare request
+        List<RestRequest> requests = new ArrayList<>();
+        for (Map<String, Object> fields : listFields) {
+            requests.add(RestRequest.getRequestForCreate(apiVersion, objectType, fields));
+        }
+        final RestRequest batchRequest = RestRequest.getBatchRequest(apiVersion, false, requests);
+
+        // Go to server
+        RestResponse response = restClient.sendSync(batchRequest);
+        Assert.assertTrue("Creates failed", response.isSuccess() && !response.asJSONObject().getBoolean("hasErrors"));
+        Map<String, Map <String, Object>> idToFields = new HashMap<>();
+        JSONArray results = response.asJSONObject().getJSONArray("results");
+        for (int i = 0; i< results.length(); i++) {
+            JSONObject result = results.getJSONObject(i);
+            Assert.assertEquals("Status should be HTTP_CREATED", HttpURLConnection.HTTP_CREATED, result.getInt("statusCode"));
+            String id = result.getJSONObject("result").getString(LID);
+            Map<String, Object> fields = listFields.get(i);
+
+            idToFields.put(id, fields);
+        }
+        return idToFields;
+    }
+
+    /**
+     * Helper method to build field name to field value maps
+     *
+     * @param count
+     * @param objectType
+     * @param additionalFields
+     * @return
+     */
+    protected List<Map<String, Object>> buildFieldsMapForRecords(int count, String objectType, Map<String, Object> additionalFields) {
+        List<Map <String, Object>> listFields = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+
+            // Request.
+            String name = createRecordName(objectType);
+            Map<String, Object> fields = new HashMap<>();
+
+            // Add additional fields if any
+            if (additionalFields != null) {
+                fields.putAll(additionalFields);
+            }
+
+            //add more object type if need to support to use this API
+            //to create a new record on server
+            switch (objectType) {
+                case Constants.ACCOUNT:
+                    fields.put(Constants.NAME, name);
+                    fields.put(Constants.DESCRIPTION, "Description_" + name);
+                    break;
+                case Constants.CONTACT:
+                    fields.put(Constants.LAST_NAME, name);
+                    break;
+                case Constants.OPPORTUNITY:
+                    fields.put(Constants.NAME, name);
+                    fields.put("StageName", "Prospecting");
+                    DateFormat formatter = new SimpleDateFormat("yyyy-MM-dd");
+                    fields.put("CloseDate", formatter.format(new Date()));
+                    break;
+                default:
+                    break;
+            }
+            listFields.add(fields);
+        }
+        return listFields;
+    }
+
+    /**
+     * Delete records with given ids from server
+     * @param ids
+     * @throws Exception
+     */
+    protected void deleteRecordsOnServer(Collection<String> ids, String objectType) throws Exception {
+        List<RestRequest> requests = new ArrayList<>();
+        for (String id : ids) {
+            requests.add(RestRequest.getRequestForDelete(apiVersion, objectType, id));
+        }
+        restClient.sendSync(RestRequest.getBatchRequest(apiVersion, false, requests));
+    }
+
+    /**
+     * @return record name of the form SyncManagerTest<random number left-padded to be 8 digits long>
+     */
+    protected String createRecordName(String objectType) {
+        return String.format(Locale.US, "ManagerTest_%s_%d", objectType, System.nanoTime());
+    }
+
+    /**
+     * Update records on server
+     * @param idToFieldsUpdated
+     * @param sObjectType
+     * @throws Exception
+     */
+    protected void updateRecordsOnServer(Map<String, Map<String, Object>> idToFieldsUpdated, String sObjectType) throws Exception {
+        List<RestRequest> requests = new ArrayList<>();
+        for (String id : idToFieldsUpdated.keySet()) {
+            requests.add(RestRequest.getRequestForUpdate(apiVersion, sObjectType, id, idToFieldsUpdated.get(id)));
+        }
+        RestResponse response = restClient.sendSync(RestRequest.getBatchRequest(apiVersion, false, requests));
+        Assert.assertTrue("Updates failed", response.isSuccess() && !response.asJSONObject().getBoolean("hasErrors"));
+    }
 }

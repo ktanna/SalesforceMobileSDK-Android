@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, salesforce.com, inc.
+ * Copyright (c) 2011-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -38,7 +38,14 @@ public class RestExplorerApp extends Application {
 	@Override
 	public void onCreate() {
 		super.onCreate();
-		SalesforceSDKManager.initNative(getApplicationContext(), new KeyImpl(), ExplorerActivity.class);
+		SalesforceSDKManager.initNative(getApplicationContext(), ExplorerActivity.class);
+
+		/*
+         * Uncomment the following line to enable IDP login flow. This will allow the user to
+         * either authenticate using the current app or use a designated IDP app for login.
+         * Replace 'idpAppURIScheme' with the URI scheme of the IDP app meant to be used.
+         */
+        // SalesforceSDKManager.getInstance().setIDPAppURIScheme(idpAppURIScheme);
 
 		/*
 		 * Un-comment the line below to enable push notifications in this app.

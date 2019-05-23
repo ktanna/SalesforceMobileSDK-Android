@@ -1,13 +1,33 @@
-apply plugin: 'android'
+apply plugin: 'com.android.application'
 
 dependencies {
-  compile project(':libs:SalesforceSDK')
+  api project(':libs:SalesforceSDK')
+  androidTestImplementation ('androidx.test:runner:1.1.1') {
+    exclude module: 'support-annotations'
+  }
+  androidTestImplementation ('androidx.test:rules:1.1.1') {
+    exclude module: 'support-annotations'
+  }
+  androidTestImplementation ('androidx.test.espresso:espresso-core:3.1.1') {
+    exclude module: 'support-annotations'
+  }
+  androidTestImplementation 'androidx.test.ext:junit:1.1.0'
 }
 
 android {
-  compileSdkVersion 23
-  buildToolsVersion '23.0.1'
-  useLibrary  'org.apache.http.legacy'
+  compileSdkVersion 28
+  buildToolsVersion '28.0.3'
+
+  defaultConfig {
+    targetSdkVersion 28
+    minSdkVersion 21
+  }
+  
+  buildTypes {
+      debug {
+         testCoverageEnabled = true
+      }
+   }
 
   sourceSets {
 
@@ -30,18 +50,18 @@ android {
   }
   defaultConfig {
     testApplicationId "com.salesforce.samples.restexplorer.tests"
-    testInstrumentationRunner "com.salesforce.androidsdk.util.test.JUnitReportTestRunner"
+    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
   }
   packagingOptions {
     exclude 'META-INF/LICENSE'
     exclude 'META-INF/LICENSE.txt'
     exclude 'META-INF/DEPENDENCIES'
     exclude 'META-INF/NOTICE'
+    pickFirst 'protobuf.meta'
   }
-}
 
-afterEvaluate {
-  // Find all connected Android tests and ensure they log all passed tests. This keeps the Travis
-  // from timing out since executing tests are printed to the console.
-  tasks.matching { it.name ==~ /^connected.*AndroidTest$/ }*.logging*.setLevel(LogLevel.INFO)
+  lintOptions {
+    xmlReport true
+    abortOnError false
+  }
 }

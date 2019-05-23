@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,22 +26,23 @@
  */
 package com.salesforce.androidsdk.security;
 
-import java.io.File;
-import java.io.FilenameFilter;
-
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import android.os.Handler;
-import android.util.Log;
 
 import com.salesforce.androidsdk.accounts.UserAccount;
+import com.salesforce.androidsdk.analytics.EventBuilderHelper;
+import com.salesforce.androidsdk.analytics.security.Encryptor;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
-import com.salesforce.androidsdk.app.UUIDManager;
 import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
+
+import java.io.File;
+import java.io.FilenameFilter;
 
 /**
  * This class manages the inactivity timeout, and keeps track of if the UI should locked etc.
@@ -55,77 +56,102 @@ public class PasscodeManager  {
 	private static final String VKEY = "vkey";
 	private static final String VSUFFIX = "vsuffix";
 	private static final String VPREFIX = "vprefix";
-	private static final String EKEY = "ekey";
-	private static final String ESUFFIX = "esuffix";
-	private static final String EPREFIX = "eprefix";
+	private static final String TAG = "PasscodeManager";
 	
     // Default min passcode length
     public static final int MIN_PASSCODE_LENGTH = 4;
 
     // Key in preference for the passcode
-    private static final String KEY_PASSCODE ="passcode";
+    protected static final String KEY_PASSCODE ="passcode";
 
     // Private preference where we stored the passcode (hashed)
-    private static final String PASSCODE_PREF_NAME = "user";
+    protected static final String PASSCODE_PREF_NAME = "user";
 
     // Private preference where we stored the org settings.
-    private static final String MOBILE_POLICY_PREF = "mobile_policy";
+    protected static final String MOBILE_POLICY_PREF = "mobile_policy";
 
     // Key in preference for the access timeout.
-    private static final String KEY_TIMEOUT = "access_timeout";
+    protected static final String KEY_TIMEOUT = "access_timeout";
 
     // Key in preference for the passcode length.
-    private static final String KEY_PASSCODE_LENGTH = "passcode_length";
+    protected static final String KEY_PASSCODE_LENGTH = "passcode_length";
+
+    // Key in preferences for actual passcode length known
+    protected static final String KEY_PASSCODE_LENGTH_KNOWN = "passcode_length_known";
+
+    // Key in preference for connect app biometric flag.
+    protected static final String KEY_BIOMETRIC_ALLOWED = "biometric_allowed";
+
+    // Key in preferences to indicate if the user has been prompted to use biometric.
+    protected static final String KEY_BIOMETRIC_ENROLLMENT = "biometric_enrollment";
+
+    // Key in preferences to indicate if the user has enabled biometric.
+    protected static final String KEY_BIOMETRIC_ENABLED = "biometric_enabled";
+
+    // Key in preference to indicate passcode change is required.
+    protected static final String KEY_PASSCODE_CHANGE_REQUIRED= "passcode_change_required";
+
+    // Key in preference for failed attempts
+    protected static final String KEY_FAILED_ATTEMPTS = "failed_attempts";
 
     // Request code used to start passcode activity
     public static final int PASSCODE_REQUEST_CODE = 777;
 
-    // Key used to specify that a longer passcode needs to be created.
-    public static final String CHANGE_PASSCODE_KEY = "change_passcode";
-
-    // this is a hash of the passcode to be used as part of the key to encrypt/decrypt oauth tokens
-    // It's using a different salt/key than the one used to verify the entry
-    private String passcodeHash;
-
     // Misc
     private HashConfig verificationHashConfig;
-    private HashConfig encryptionHashConfig;
-    private int failedPasscodeAttempts;
-    private Activity frontActivity;
     private Handler handler;
     private long lastActivity;
-    private boolean locked;
+    boolean locked;
     private int timeoutMs;
-    private int minPasscodeLength;
+    private int passcodeLength;
+    private boolean biometricAllowed;
+    private boolean biometricEnrollmentShown;
+    private boolean biometricEnabled;
+    private boolean passcodeChangeRequired;
     private LockChecker lockChecker;
+    private boolean passcodeLengthKnown;
 
     /**
      * Parameterized constructor.
      *
      * @param ctx Context.
-     * @param verificationHashConfig Verification HashConfig.
-     * @param encryptionHashConfig Encryption HashConfig.
      */
    public PasscodeManager(Context ctx) {
-	   this(ctx,
-		   new HashConfig(UUIDManager.getUuId(VPREFIX),
-				   UUIDManager.getUuId(VSUFFIX), UUIDManager.getUuId(VKEY)),
-		   new HashConfig(UUIDManager.getUuId(EPREFIX),
-				   UUIDManager.getUuId(ESUFFIX), UUIDManager.getUuId(EKEY)));
+	   this(ctx, new HashConfig(SalesforceKeyGenerator.getUniqueId(VPREFIX),
+                   SalesforceKeyGenerator.getUniqueId(VSUFFIX),
+                   SalesforceKeyGenerator.getUniqueId(VKEY)));
    }
 
-   public PasscodeManager(Context ctx, HashConfig verificationHashConfig,
-		   HashConfig encryptionHashConfig) {
-       this.minPasscodeLength = MIN_PASSCODE_LENGTH;
+   public PasscodeManager(Context ctx, HashConfig verificationHashConfig) {
+       this.passcodeLength = MIN_PASSCODE_LENGTH;
        this.lastActivity = now();
        this.verificationHashConfig = verificationHashConfig;
-       this.encryptionHashConfig = encryptionHashConfig;
        readMobilePolicy(ctx);
 
        // Locked at app startup if you're authenticated.
        this.locked = true;
        lockChecker = new LockChecker(); 
    }
+
+    /**
+     * Returns true if a passcode change is required.
+     *
+     * @return true if passcode change required.
+     */
+    public boolean isPasscodeChangeRequired() {
+        return passcodeChangeRequired;
+    }
+
+
+    /**
+     * Set passcode change required flag to the passed value
+     * @param ctx Context.
+     * @param passcodeChangeRequired value to set passcode change required flag to
+     */
+    public void setPasscodeChangeRequired(Context ctx, boolean passcodeChangeRequired) {
+        this.passcodeChangeRequired = passcodeChangeRequired;
+        storeMobilePolicy(ctx);
+    }
 
    /**
     * Returns the timeout value for the specified account.
@@ -165,17 +191,35 @@ public class PasscodeManager  {
      * @param account UserAccount instance.
      * @param timeout Timeout value, in ms.
      * @param passLen Minimum passcode length.
+     *
+     * @deprecated Will be removed in Mobile SDK 8.0.
+     * Use {@link PasscodeManager#storeMobilePolicyForOrg(UserAccount, int, int, boolean)} instead.
      */
     public void storeMobilePolicyForOrg(UserAccount account, int timeout, int passLen) {
-    	if (account == null) {
-    		return;
-    	}
-    	final Context context = SalesforceSDKManager.getInstance().getAppContext();
+    	storeMobilePolicyForOrg(account, timeout, passLen, true);
+    }
+
+    /**
+     * Stores the mobile policy for the specified account.
+     *
+     * @param account UserAccount instance.
+     * @param timeout Timeout value, in ms.
+     * @param passLen Minimum passcode length.
+     * @param bioAllowed If biometric Unlock is Allowed by connected App
+     */
+    @SuppressLint("ApplySharedPref")
+    public void storeMobilePolicyForOrg(UserAccount account, int timeout, int passLen, boolean bioAllowed) {
+        if (account == null) {
+            return;
+        }
+        final Context context = SalesforceSDKManager.getInstance().getAppContext();
         final SharedPreferences sp = context.getSharedPreferences(MOBILE_POLICY_PREF
-        		+ account.getOrgLevelFilenameSuffix(), Context.MODE_PRIVATE);
+                + account.getOrgLevelFilenameSuffix(), Context.MODE_PRIVATE);
         final Editor e = sp.edit();
         e.putInt(KEY_TIMEOUT, timeout);
         e.putInt(KEY_PASSCODE_LENGTH, passLen);
+        e.putBoolean(KEY_PASSCODE_LENGTH_KNOWN, passcodeLengthKnown);
+        e.putBoolean(KEY_BIOMETRIC_ALLOWED, bioAllowed);
         e.commit();
     }
 
@@ -184,6 +228,7 @@ public class PasscodeManager  {
      *
      * @param context Context.
      */
+    @SuppressLint("ApplySharedPref")
     private void storeMobilePolicy(Context context) {
 
         // Context will be null only in test runs.
@@ -192,7 +237,12 @@ public class PasscodeManager  {
             		Context.MODE_PRIVATE);
             Editor e = sp.edit();
             e.putInt(KEY_TIMEOUT, timeoutMs);
-            e.putInt(KEY_PASSCODE_LENGTH, minPasscodeLength);
+            e.putInt(KEY_PASSCODE_LENGTH, passcodeLength);
+            e.putBoolean(KEY_PASSCODE_LENGTH_KNOWN, passcodeLengthKnown);
+            e.putBoolean(KEY_PASSCODE_CHANGE_REQUIRED, passcodeChangeRequired);
+            e.putBoolean(KEY_BIOMETRIC_ALLOWED, biometricAllowed);
+            e.putBoolean(KEY_BIOMETRIC_ENROLLMENT, biometricEnrollmentShown);
+            e.putBoolean(KEY_BIOMETRIC_ENABLED, biometricEnabled);
             e.commit();
         }
     }
@@ -210,18 +260,28 @@ public class PasscodeManager  {
             		Context.MODE_PRIVATE);
             if (!sp.contains(KEY_TIMEOUT) || !sp.contains(KEY_PASSCODE_LENGTH)) {
                 timeoutMs = 0;
-                minPasscodeLength = MIN_PASSCODE_LENGTH;
+                passcodeLength = MIN_PASSCODE_LENGTH;
+                passcodeChangeRequired = false;
+                biometricAllowed = true;
+                biometricEnrollmentShown = false;
+                biometricEnabled = false;
                 storeMobilePolicy(context);
                 return;
             }
             timeoutMs = sp.getInt(KEY_TIMEOUT, 0);
-            minPasscodeLength = sp.getInt(KEY_PASSCODE_LENGTH, MIN_PASSCODE_LENGTH);
+            passcodeLength = sp.getInt(KEY_PASSCODE_LENGTH, MIN_PASSCODE_LENGTH);
+            passcodeLengthKnown = sp.getBoolean(KEY_PASSCODE_LENGTH_KNOWN, false);
+            passcodeChangeRequired = sp.getBoolean(KEY_PASSCODE_CHANGE_REQUIRED, false);
+            biometricAllowed = sp.getBoolean(KEY_BIOMETRIC_ALLOWED, true);
+            biometricEnrollmentShown = sp.getBoolean(KEY_BIOMETRIC_ENROLLMENT, false);
+            biometricEnabled = sp.getBoolean(KEY_BIOMETRIC_ENABLED, false);
         }
     }
 
     /**
      * Reset this passcode manager: delete stored passcode and reset fields to their starting value
      */
+    @SuppressLint("ApplySharedPref")
     public void reset(Context ctx) {
 
     	// Deletes the underlying org policy files for all orgs.
@@ -235,15 +295,24 @@ public class PasscodeManager  {
     	}
     	lastActivity = now();
         locked = true;
-        failedPasscodeAttempts = 0;
-        passcodeHash = null;
         SharedPreferences sp = ctx.getSharedPreferences(PASSCODE_PREF_NAME,
         		Context.MODE_PRIVATE);
         Editor e = sp.edit();
         e.remove(KEY_PASSCODE);
+        e.remove(KEY_FAILED_ATTEMPTS);
+        e.remove(KEY_PASSCODE_LENGTH);
+        e.remove(KEY_PASSCODE_LENGTH_KNOWN);
+        e.remove(KEY_BIOMETRIC_ALLOWED);
+        e.remove(KEY_BIOMETRIC_ENROLLMENT);
+        e.remove(KEY_BIOMETRIC_ENABLED);
         e.commit();
         timeoutMs = 0;
-        minPasscodeLength = MIN_PASSCODE_LENGTH;
+        passcodeLength = MIN_PASSCODE_LENGTH;
+        passcodeLengthKnown = false;
+        passcodeChangeRequired = false;
+        biometricAllowed = true;
+        biometricEnrollmentShown = false;
+        biometricEnabled = false;
         storeMobilePolicy(ctx);
         handler = null;
     }
@@ -254,6 +323,7 @@ public class PasscodeManager  {
      * @param context Context.
      * @param account User account.
      */
+    @SuppressLint("ApplySharedPref")
     public void reset(Context context, UserAccount account) {
     	if (account == null) {
     		return;
@@ -291,18 +361,20 @@ public class PasscodeManager  {
      * @return the new failure count
      */
     public int addFailedPasscodeAttempt() {
-        return ++failedPasscodeAttempts;
+        int failedAttempts = getFailedPasscodeAttempts() + 1;
+        setFailedPasscodeAttempts(failedAttempts);
+        return failedAttempts;
     }
 
     /**
-     * @param ctx
-     * @param passcode
+     * @param ctx Context.
+     * @param passcode Passcode.
      * @return true if passcode matches the one stored (hashed) in private preference
      */
     public boolean check(Context ctx, String passcode) {
-        SharedPreferences sp = ctx.getSharedPreferences(PASSCODE_PREF_NAME, Context.MODE_PRIVATE);
+        final SharedPreferences sp = ctx.getSharedPreferences(PASSCODE_PREF_NAME, Context.MODE_PRIVATE);
         String hashedPasscode = sp.getString(KEY_PASSCODE, null);
-        hashedPasscode = Encryptor.removeNewLine(hashedPasscode);
+        hashedPasscode = removeNewLine(hashedPasscode);
         if (hashedPasscode != null) {
             return hashedPasscode.equals(hashForVerification(passcode));
         }
@@ -314,19 +386,40 @@ public class PasscodeManager  {
     }
 
     /**
-     * Store the given passcode (hashed) in private preference
-     * @param ctx
-     * @param passcode
+     * Removes a trailing newline character from the hash.
+     *
+     * @param hash Hash.
+     * @return Hash with trailing newline character removed.
      */
+    private String removeNewLine(String hash) {
+        int length = hash == null ? 0 : hash.length();
+        if (length > 0 && hash.endsWith("\n")) {
+            return hash.substring(0, length - 1);
+        }
+        return hash;
+    }
+
+    /**
+     * Store the given passcode (hashed) in private preference
+     * @param ctx Context.
+     * @param passcode Passcode.
+     */
+    @SuppressLint("ApplySharedPref")
     public void store(Context ctx, String passcode) {
         SharedPreferences sp = ctx.getSharedPreferences(PASSCODE_PREF_NAME, Context.MODE_PRIVATE);
         Editor e = sp.edit();
         e.putString(KEY_PASSCODE, hashForVerification(passcode));
+        e.putInt(KEY_PASSCODE_LENGTH, passcode.length());
+        e.putBoolean(KEY_PASSCODE_LENGTH_KNOWN, true);
+        e.putBoolean(KEY_BIOMETRIC_ENROLLMENT, biometricEnrollmentShown);
+        e.putBoolean(KEY_BIOMETRIC_ENABLED, biometricEnabled);
         e.commit();
+        setPasscodeChangeRequired(ctx,false);
+        setPasscodeLengthKnown(ctx, true);
     }
 
     /**
-     * @param ctx
+     * @param ctx Context.
      * @return true if passcode was already created
      */
     public boolean hasStoredPasscode(Context ctx) {
@@ -338,25 +431,16 @@ public class PasscodeManager  {
      * @return number of failed passcode attempts
      */
     public int getFailedPasscodeAttempts() {
-        return failedPasscodeAttempts;
+        SharedPreferences sp = SalesforceSDKManager.getInstance().getAppContext().getSharedPreferences(PASSCODE_PREF_NAME, Context.MODE_PRIVATE);
+        return sp.getInt(KEY_FAILED_ATTEMPTS, 0);
     }
 
-    /**
-     * @return a hash of the passcode that can be used for encrypting oauth tokens
-     */
-    public String getPasscodeHash() {
-        return passcodeHash;
-    }
-
-    /**
-     * Sets the passcode hash, used ONLY in tests.
-     *
-     * @param passcodeHash Passcode hash.
-     */
-    public void setPasscodeHash(String passcodeHash) {
-    	if (SalesforceSDKManager.getInstance().getIsTestRun()) {
-        	this.passcodeHash = passcodeHash;
-    	}
+    @SuppressLint("ApplySharedPref")
+    private void setFailedPasscodeAttempts(int failedPasscodeAttempts) {
+        SharedPreferences sp = SalesforceSDKManager.getInstance().getAppContext().getSharedPreferences(PASSCODE_PREF_NAME, Context.MODE_PRIVATE);
+        Editor e = sp.edit();
+        e.putInt(KEY_FAILED_ATTEMPTS, failedPasscodeAttempts);
+        e.commit();
     }
 
     /**
@@ -367,23 +451,19 @@ public class PasscodeManager  {
     }
 
     /**
-     * @param ctx
+     * @param ctx Context.
      */
     public void lock(Context ctx) {
-        locked = true;
-        showLockActivity(ctx, false);
-        EventsObservable.get().notifyEvent(EventType.AppLocked);
+        showLockActivity(ctx);
     }
 
     /**
-     * @param newFrontActivity
+     * @param frontActivity
      * @param registerActivity
      * @return
      */
-    public boolean lockIfNeeded(Activity newFrontActivity, boolean registerActivity) {
-        if (newFrontActivity != null)
-            frontActivity = newFrontActivity;
-        if (isEnabled() && (isLocked() || shouldLock())) {
+    public boolean lockIfNeeded(Activity frontActivity, boolean registerActivity) {
+        if (isEnabled() && (isLocked() || shouldLock() || passcodeChangeRequired)) {
             lock(frontActivity);
             return true;
         } else {
@@ -391,15 +471,6 @@ public class PasscodeManager  {
             return false;
         }
     }
-
-    /**
-     * @param a
-     */
-    public void nolongerFrontActivity(Activity a) {
-        if (frontActivity == a)
-            frontActivity = null;
-    }
-
 
     /**
      * To be called by passcode protected activity when being paused
@@ -454,52 +525,163 @@ public class PasscodeManager  {
          * no passcode to passcode, which will trigger the passcode creation flow.
          */
         if (timeoutMs == 0 || (timeoutMs > 0 && newTimeout > 0)) {
-            timeoutMs = newTimeout;
+
+            // Updates timeout only if the new timeout is smaller than the old one.
+            if (timeoutMs == 0 || timeoutMs > newTimeout) {
+                timeoutMs = newTimeout;
+            }
             storeMobilePolicy(SalesforceSDKManager.getInstance().getAppContext());
             return;
         }
 
         // Passcode to no passcode.
         timeoutMs = newTimeout;
-        SalesforceSDKManager.getInstance().changePasscode(passcodeHash, null);
         reset(SalesforceSDKManager.getInstance().getAppContext());
     }
 
+    /**
+     * The current inactivity timeout before the app locks, in milliseconds.
+     *
+     * @return the inactivity timeout
+     */
     public int getTimeoutMs() {
         return timeoutMs;
     }
 
+    /**
+     *
+     * @deprecated Will be removed in Mobile SDK 8.0. Use {@link PasscodeManager#getPasscodeLength()}  instead.
+     */
     public int getMinPasscodeLength() {
-        return minPasscodeLength;
+        return passcodeLength;
     }
 
-    public void setMinPasscodeLength(int minPasscodeLength) {
-    	if (minPasscodeLength > this.minPasscodeLength) {
-            this.minPasscodeLength = minPasscodeLength;
+    /**
+     * The exact length of the passcode if it is known.  It may be unknown on upgrade before first unlock.
+     * Use {@link PasscodeManager#getPasscodeLengthKnown()} to check if return is exact length or org minimum.
+     *
+     * @return passcode length
+     */
+    public int getPasscodeLength() {
+        return passcodeLength;
+    }
 
-            /*
-             * This needs to happen only if a passcode exists, in order to trigger
-             * the 'Change Passcode' flow. Otherwise, we simply need to update
-             * the minimum length in memory. The 'Create Passcode' flow is
-             * triggered later from OAuthWebviewHelper.
-             */
-            if (hasStoredPasscode(SalesforceSDKManager.getInstance().getAppContext())) {
-        		showLockActivity(SalesforceSDKManager.getInstance().getAppContext(),
-        				true);
+    /**
+     * Whether or not the exact passcode length is known.  It may be unknown on upgrade before first unlock.
+     * Use {@link PasscodeManager#getPasscodeLength()} to get the length.
+     *
+     * @return true if the length is known
+     */
+    public boolean getPasscodeLengthKnown() {
+        return passcodeLengthKnown;
+    }
+
+    /**
+     * Whether or not the connected app allows biometric as an alternative to passcode.
+     *
+     * @return true if biometric is allowed
+     */
+    public boolean biometricAllowed() {
+        return biometricAllowed;
+    }
+
+    /**
+     * Whether or not the user has been shown the screen prompting them to enroll in biometric unlock.
+     * @return true if the user has been prompted to enable biometric
+     */
+    public boolean biometricEnrollmentShown() {
+        return biometricEnrollmentShown;
+    }
+
+    /**
+     * Whether or not the user has enabled the ability to use biometric to bypass passcode.
+     *
+     * @return true if the user has enabled biometric
+     */
+    public boolean biometricEnabled() {
+        return biometricEnabled;
+    }
+
+    /**
+     * @param ctx Context.
+     * @param minPasscodeLength The new minimum passcode length to set.
+     *
+     * @deprecated Will be removed in Mobile SDK 8.0. Use {@link PasscodeManager#setPasscodeLength(Context, int)}  instead.
+     */
+    public void setMinPasscodeLength(Context ctx, int minPasscodeLength) {
+        setPasscodeLength(ctx, minPasscodeLength);
+    }
+
+    /**
+     * @param ctx Context.
+     * @param passcodeLength The new passcode length to set.
+     */
+    public void setPasscodeLength(Context ctx, int passcodeLength) {
+    	if (passcodeLength > this.passcodeLength) {
+            if (hasStoredPasscode(ctx) && passcodeLengthKnown) {
+                this.passcodeChangeRequired = true;
             }
+
+            this.passcodeLength = passcodeLength;
     	}
-        this.minPasscodeLength = minPasscodeLength;
-        storeMobilePolicy(SalesforceSDKManager.getInstance().getAppContext());
+
+        this.passcodeLengthKnown = true;
+        storeMobilePolicy(ctx);
     }
 
+    /**
+     * This method can be used to force the stored or default passcode length to be trusted
+     * upon upgrade if set to 'true'.
+     *
+     * @param ctx Context
+     * @param lengthKnown Whether or not the passcode length is known.
+     */
+    public void setPasscodeLengthKnown(Context ctx, boolean lengthKnown) {
+        this.passcodeLengthKnown = lengthKnown;
+        storeMobilePolicy(ctx);
+    }
+
+    /**
+     * Called when biometric unlock requirement for the org changes.
+     */
+    public void setBiometricAllowed(Context ctx, boolean allowed) {
+        if (this.biometricAllowed) {
+            this.biometricAllowed = allowed;
+        }
+        storeMobilePolicy(ctx);
+    }
+
+    /**
+     * By default biometric enrollment is only shown to the user once.
+     *
+     * @param shown set to true to show biometric prompt on next passcode unlock.
+     */
+    public void setBiometricEnrollmentShown(Context ctx, boolean shown) {
+        biometricEnrollmentShown = shown;
+        storeMobilePolicy(ctx);
+    }
+
+    /**
+     * Sets biometric enabled.
+     */
+    public void setBiometricEnabled(Context ctx, boolean enabled) {
+        biometricEnabled = enabled && biometricAllowed();
+        storeMobilePolicy(ctx);
+    }
+
+    /**
+     * @return true if time elapsed since the last user activity in the app exceeds the timeoutMs
+     */
     public boolean shouldLock() {
         return timeoutMs > 0 && now() >= (lastActivity + timeoutMs);
     }
 
-    public void showLockActivity(Context ctx, boolean changePasscodeFlow) {
+    public void showLockActivity(Context ctx) {
+        locked = true;
         if (ctx == null) {
-        	return;
+            ctx = SalesforceSDKManager.getInstance().getAppContext();
         }
+
         final Intent i = new Intent(ctx, SalesforceSDKManager.getInstance().getPasscodeActivity());
         i.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         i.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
@@ -507,17 +689,12 @@ public class PasscodeManager  {
         if (ctx == SalesforceSDKManager.getInstance().getAppContext()) {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         }
-        i.putExtra(CHANGE_PASSCODE_KEY, changePasscodeFlow);
         if (ctx instanceof Activity) {
             ((Activity) ctx).startActivityForResult(i, PASSCODE_REQUEST_CODE);
         } else {
             ctx.startActivity(i);
         }
-    }
-
-    public void unlock(String passcode) {
-        passcodeHash = hashForEncryption(passcode);
-        unlock();
+        EventsObservable.get().notifyEvent(EventType.AppLocked);
     }
 
     /**
@@ -525,8 +702,9 @@ public class PasscodeManager  {
      * The passcode hash isn't updated as the authentication is verified by the OS.
      */
     public void unlock() {
+        EventBuilderHelper.createAndStoreEvent("passcodeUnlock", null, TAG, null);
         locked = false;
-        failedPasscodeAttempts = 0;
+        setFailedPasscodeAttempts(0);
         updateLast();
         EventsObservable.get().notifyEvent(EventType.AppUnlocked);
     }
@@ -542,27 +720,21 @@ public class PasscodeManager  {
     public String hashForVerification(String passcode) {
     	return hash(passcode, verificationHashConfig);
     }
-    
-    public String hashForEncryption(String passcode) {
-    	return hash(passcode, encryptionHashConfig);
-    }
-    
+
     private String hash(String passcode, HashConfig hashConfig) {
         return Encryptor.hash(hashConfig.prefix + passcode + hashConfig.suffix, hashConfig.key);
     }
 
     /**
      * Thread checking periodically to see how much has elapsed since the last recorded activity
-      * When that elapsed time exceed timeoutMs, it locks the app
-      */
+     * When that elapsed time exceed timeoutMs, it locks the app
+     */
     private class LockChecker implements Runnable {
         public void run() {
             try {
-            	if (isEnabled()) {
-            		Log.d("LockChecker:run",  "isLocked:" + locked + " elapsedSinceLastActivity:" + ((now() - lastActivity)/1000) + " timeout:" + (timeoutMs / 1000));
-            	}
-                if (!locked)
+                if (!locked) {
                     lockIfNeeded(null, false);
+                }
             } finally {
                 if (handler != null) {
                     handler.postDelayed(this, 20 * 1000);
@@ -575,9 +747,11 @@ public class PasscodeManager  {
      * Key for hashing and salts to be preprended and appended to data to increase entropy.
      */
     public static class HashConfig {
+
         public final String prefix;
         public final String suffix;
         public final String key;
+
         public HashConfig(String prefix, String suffix, String key) {
             this.prefix = prefix;
             this.suffix = suffix;
@@ -596,10 +770,7 @@ public class PasscodeManager  {
 
 		@Override
 		public boolean accept(File dir, String filename) {
-			if (filename != null && filename.startsWith(PASSCODE_FILE_PREFIX)) {
-				return true;
-			}
-			return false;
+		    return (filename != null && filename.startsWith(PASSCODE_FILE_PREFIX));
 		}
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -31,7 +31,12 @@ import android.content.Context;
 
 import com.salesforce.androidsdk.config.BootConfig;
 import com.salesforce.androidsdk.phonegap.ui.SalesforceDroidGapActivity;
+import com.salesforce.androidsdk.smartstore.config.StoreConfig;
+import com.salesforce.androidsdk.smartstore.store.SmartStore;
+import com.salesforce.androidsdk.smartstore.util.SmartStoreLogger;
 import com.salesforce.androidsdk.smartsync.app.SmartSyncSDKManager;
+import com.salesforce.androidsdk.smartsync.config.SyncsConfig;
+import com.salesforce.androidsdk.smartsync.util.SmartSyncLogger;
 import com.salesforce.androidsdk.ui.LoginActivity;
 import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
@@ -41,93 +46,98 @@ import com.salesforce.androidsdk.util.EventsObservable.EventType;
  */
 public class SalesforceHybridSDKManager extends SmartSyncSDKManager {
 
+    private static final String TAG = "SalesforceHybridSDKManager";
+
     /**
-     * Protected constructor.
-     * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
-	 * @param mainActivity Activity that should be launched after the login flow.
-	 * @param loginActivity Login activity.
-	 */
-    protected SalesforceHybridSDKManager(Context context, KeyInterface keyImpl,
-								  Class<? extends Activity> mainActivity, Class<? extends Activity> loginActivity) {
-    	super(context, keyImpl, mainActivity, loginActivity);
+     * Paths to the assets files containing configs for SmartStore/SmartSync in hybrid apps.
+     */
+    private enum ConfigAssetPath {
+
+        globalStore("globalstore.json"),
+        userStore("userstore.json"),
+        globalSyncs("globalsyncs.json"),
+        userSyncs("usersyncs.json");
+
+        String path;
+
+        ConfigAssetPath(String fileName) {
+            path = "www" + System.getProperty("file.separator") + fileName;
+        }
     }
 
-	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by apps using the Salesforce Mobile SDK.
-	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
-	 * @param mainActivity Activity that should be launched after the login flow.
-	 * @param loginActivity Login activity.
-	 */
-	private static void init(Context context, KeyInterface keyImpl,
-							 Class<? extends Activity> mainActivity, Class<? extends Activity> loginActivity) {
-		if (INSTANCE == null) {
-    		INSTANCE = new SalesforceHybridSDKManager(context, keyImpl, mainActivity, loginActivity);
-    	}
-		initInternal(context);
+    /**
+     * Protected constructor.
+     *
+     * @param context Application context.
+     * @param mainActivity Activity that should be launched after the login flow.
+     * @param loginActivity Login activity.
+     */
+    protected SalesforceHybridSDKManager(Context context, Class<? extends Activity> mainActivity,
+                                         Class<? extends Activity> loginActivity) {
+        super(context, mainActivity, loginActivity);
+    }
 
-        // Upgrade to the latest version.
-        SalesforceHybridUpgradeManager.getInstance().upgrade();
+	private static void init(Context context, Class<? extends Activity> mainActivity,
+							 Class<? extends Activity> loginActivity) {
+		if (INSTANCE == null) {
+    		INSTANCE = new SalesforceHybridSDKManager(context, mainActivity, loginActivity);
+    	}
+
+		// Upgrade to the latest version.
+		SalesforceHybridUpgradeManager.getInstance().upgrade();
+		initInternal(context);
         EventsObservable.get().notifyEvent(EventType.AppCreateComplete);
 	}
 
-	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by hybrid apps using the Salesforce Mobile SDK.
-	 *
-	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
-	 */
-    public static void initHybrid(Context context, KeyInterface keyImpl) {
-		SalesforceHybridSDKManager.init(context, keyImpl, SalesforceDroidGapActivity.class,
+    /**
+     * Initializes components required for this class
+     * to properly function. This method should be called
+     * by hybrid apps using the Salesforce Mobile SDK.
+     *
+     * @param context Application context.
+     */
+    public static void initHybrid(Context context) {
+        SalesforceHybridSDKManager.init(context, SalesforceDroidGapActivity.class,
                 LoginActivity.class);
     }
 
-	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by hybrid apps using the Salesforce Mobile SDK.
-	 *
-	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
+    /**
+     * Initializes components required for this class
+     * to properly function. This method should be called
+     * by hybrid apps using the Salesforce Mobile SDK.
+     *
+     * @param context Application context.
      * @param loginActivity Login activity.
-	 */
-    public static void initHybrid(Context context, KeyInterface keyImpl,
-    		Class<? extends Activity> loginActivity) {
-		SalesforceHybridSDKManager.init(context, keyImpl, SalesforceDroidGapActivity.class,
-				loginActivity);
+     */
+    public static void initHybrid(Context context, Class<? extends Activity> loginActivity) {
+        SalesforceHybridSDKManager.init(context, SalesforceDroidGapActivity.class,
+                loginActivity);
     }
 
-	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by hybrid apps that use a subclass of SalesforceDroidGapActivity.
-	 *
-	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
+    /**
+     * Initializes components required for this class
+     * to properly function. This method should be called
+     * by hybrid apps that use a subclass of SalesforceDroidGapActivity.
+     *
+     * @param context Application context.
      * @param mainActivity Main activity.
      * @param loginActivity Login activity.
-	 */
-    public static void initHybrid(Context context, KeyInterface keyImpl,
-    		Class<? extends SalesforceDroidGapActivity> mainActivity,
-    		Class<? extends Activity> loginActivity) {
-		SalesforceHybridSDKManager.init(context, keyImpl, mainActivity, loginActivity);
+     */
+    public static void initHybrid(Context context, Class<? extends SalesforceDroidGapActivity> mainActivity,
+                                  Class<? extends Activity> loginActivity) {
+        SalesforceHybridSDKManager.init(context, mainActivity, loginActivity);
     }
     
     /**
      * Returns a singleton instance of this class.
      *
-     * @return Singleton instance of SmartSyncSDKManager.
+     * @return Singleton instance of SalesforceHybridSDKManager.
      */
-    public static SmartSyncSDKManager getInstance() {
+    public static SalesforceHybridSDKManager getInstance() {
     	if (INSTANCE != null) {
-    		return (SmartSyncSDKManager) INSTANCE;
+    		return (SalesforceHybridSDKManager) INSTANCE;
     	} else {
-            throw new RuntimeException("Applications need to call SmartSyncSDKManager.init() first.");
+            throw new RuntimeException("Applications need to call SalesforceHybridSDKManager.init() first.");
     	}
     }
 
@@ -153,4 +163,58 @@ public class SalesforceHybridSDKManager extends SmartSyncSDKManager {
 	public boolean isHybrid() {
 		return true;
 	}
+
+	/**
+	 * Setup global store using config found in assets/www/globalstore.json
+	 */
+	public void setupGlobalStoreFromDefaultConfig() {
+		SmartStoreLogger.d(TAG, "Setting up global store using config found in " + ConfigAssetPath.globalStore.path);
+		setupStoreFromConfig(getGlobalSmartStore(), ConfigAssetPath.globalStore.path);
+	}
+
+	/**
+	 * Setup user store using config found in assets/www/userstore.json
+	 */
+	public void setupUserStoreFromDefaultConfig() {
+		SmartStoreLogger.d(TAG, "Setting up user store using config found in " + ConfigAssetPath.userStore.path);
+		setupStoreFromConfig(getSmartStore(), ConfigAssetPath.userStore.path);
+	}
+
+    /**
+	 * Setup given store using config found in given json assets file
+	 *
+	 * @param store
+	 * @param assetPath
+	 */
+	private void setupStoreFromConfig(SmartStore store, String assetPath) {
+		StoreConfig config = new StoreConfig(context, assetPath);
+		config.registerSoups(store);
+	}
+
+    /**
+     * Setup global syncs using config found in assets/www/globalsyncs.json
+     */
+    public void setupGlobalSyncsFromDefaultConfig() {
+        SmartSyncLogger.d(TAG, "Setting up global syncs using config found in " + ConfigAssetPath.globalSyncs.path);
+        setupSyncsFromConfig(getGlobalSmartStore(), ConfigAssetPath.globalSyncs.path);
+    }
+
+    /**
+     * Setup user syncs using config found in assets/www/usersyncs.json
+     */
+    public void setupUserSyncsFromDefaultConfig() {
+        SmartSyncLogger.d(TAG, "Setting up user syncs using config found in " + ConfigAssetPath.userSyncs.path);
+        setupSyncsFromConfig(getSmartStore(), ConfigAssetPath.userSyncs.path);
+    }
+
+    /**
+     * Setup syncs in given store using config found in given json assets file
+     *
+     * @param store
+     * @param assetPath
+     */
+    private void setupSyncsFromConfig(SmartStore store, String assetPath) {
+        SyncsConfig config = new SyncsConfig(context, assetPath);
+        config.createSyncs(store);
+    }
 }

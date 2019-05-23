@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,17 +26,15 @@
  */
 package com.salesforce.androidsdk.smartsync.app;
 
-import android.accounts.Account;
 import android.app.Activity;
 import android.content.Context;
 
 import com.salesforce.androidsdk.accounts.UserAccount;
-import com.salesforce.androidsdk.accounts.UserAccountManager;
 import com.salesforce.androidsdk.smartstore.app.SmartStoreSDKManager;
-import com.salesforce.androidsdk.smartsync.accounts.SmartSyncUserAccountManager;
-import com.salesforce.androidsdk.smartsync.manager.CacheManager;
-import com.salesforce.androidsdk.smartsync.manager.MetadataManager;
+import com.salesforce.androidsdk.smartsync.R;
+import com.salesforce.androidsdk.smartsync.config.SyncsConfig;
 import com.salesforce.androidsdk.smartsync.manager.SyncManager;
+import com.salesforce.androidsdk.smartsync.util.SmartSyncLogger;
 import com.salesforce.androidsdk.ui.LoginActivity;
 import com.salesforce.androidsdk.util.EventsObservable;
 import com.salesforce.androidsdk.util.EventsObservable.EventType;
@@ -46,66 +44,56 @@ import com.salesforce.androidsdk.util.EventsObservable.EventType;
  */
 public class SmartSyncSDKManager extends SmartStoreSDKManager {
 
-    /**
-     * Protected constructor.
-     * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
-	 * @param mainActivity Activity that should be launched after the login flow.
-	 * @param loginActivity Login activity.
-	 */
-    protected SmartSyncSDKManager(Context context, KeyInterface keyImpl,
-								  Class<? extends Activity> mainActivity, Class<? extends Activity> loginActivity) {
-    	super(context, keyImpl, mainActivity, loginActivity);
-    }
+	private static final String TAG = "SmartSyncSDKManager";
 
 	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by apps using the Salesforce Mobile SDK.
+	 * Protected constructor.
+     *
 	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
 	 * @param mainActivity Activity that should be launched after the login flow.
 	 * @param loginActivity Login activity.
 	 */
-	private static void init(Context context, KeyInterface keyImpl,
-							 Class<? extends Activity> mainActivity, Class<? extends Activity> loginActivity) {
-		if (INSTANCE == null) {
-    		INSTANCE = new SmartSyncSDKManager(context, keyImpl, mainActivity, loginActivity);
-    	}
-		initInternal(context);
+	protected SmartSyncSDKManager(Context context, Class<? extends Activity> mainActivity,
+                                  Class<? extends Activity> loginActivity) {
+		super(context, mainActivity, loginActivity);
+	}
 
-        // Upgrade to the latest version.
-        SmartSyncUpgradeManager.getInstance().upgrade();
+	private static void init(Context context, Class<? extends Activity> mainActivity,
+							 Class<? extends Activity> loginActivity) {
+		if (INSTANCE == null) {
+    		INSTANCE = new SmartSyncSDKManager(context, mainActivity, loginActivity);
+    	}
+
+		// Upgrade to the latest version.
+		SmartSyncUpgradeManager.getInstance().upgrade();
+		initInternal(context);
         EventsObservable.get().notifyEvent(EventType.AppCreateComplete);
 	}
 
-	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by native apps using the Salesforce Mobile SDK.
-	 *
-	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
+    /**
+     * Initializes components required for this class
+     * to properly function. This method should be called
+     * by native apps using the Salesforce Mobile SDK.
+     *
+     * @param context Application context.
      * @param mainActivity Activity that should be launched after the login flow.
-	 */
-    public static void initNative(Context context, KeyInterface keyImpl,
-    		Class<? extends Activity> mainActivity) {
-    	SmartSyncSDKManager.init(context, keyImpl, mainActivity, LoginActivity.class);
+     */
+    public static void initNative(Context context, Class<? extends Activity> mainActivity) {
+        SmartSyncSDKManager.init(context, mainActivity, LoginActivity.class);
     }
 
-	/**
-	 * Initializes components required for this class
-	 * to properly function. This method should be called
-	 * by native apps using the Salesforce Mobile SDK.
-	 *
-	 * @param context Application context.
-     * @param keyImpl Implementation of KeyInterface.
+    /**
+     * Initializes components required for this class
+     * to properly function. This method should be called
+     * by native apps using the Salesforce Mobile SDK.
+     *
+     * @param context Application context.
      * @param mainActivity Activity that should be launched after the login flow.
      * @param loginActivity Login activity.
-	 */
-    public static void initNative(Context context, KeyInterface keyImpl,
-    		Class<? extends Activity> mainActivity, Class<? extends Activity> loginActivity) {
-    	SmartSyncSDKManager.init(context, keyImpl, mainActivity, loginActivity);
+     */
+    public static void initNative(Context context, Class<? extends Activity> mainActivity,
+                                  Class<? extends Activity> loginActivity) {
+        SmartSyncSDKManager.init(context, mainActivity, loginActivity);
     }
 
     /**
@@ -122,21 +110,30 @@ public class SmartSyncSDKManager extends SmartStoreSDKManager {
     }
 
     @Override
-    protected void cleanUp(Activity frontActivity, Account account) {
-    	final UserAccount userAccount = SmartSyncUserAccountManager.getInstance().buildUserAccount(account);
-    	MetadataManager.reset(userAccount);
-
-    	/*
-    	 * We don't have to do a hard reset on the cache manager here, since
-    	 * the underlying database will be wiped in the super class.
-    	 */
-    	CacheManager.softReset(userAccount);
-    	SyncManager.reset();
-        super.cleanUp(frontActivity, account);
+    protected void cleanUp(UserAccount userAccount) {
+    	SyncManager.reset(userAccount);
+        super.cleanUp(userAccount);
     }
 
-    @Override
-    public UserAccountManager getUserAccountManager() {
-    	return SmartSyncUserAccountManager.getInstance();
-    }
+	/**
+	 * Setup global syncs using config found in res/raw/globalsyncs.json
+	 */
+	public void setupGlobalSyncsFromDefaultConfig() {
+		SmartSyncLogger.d(TAG, "Setting up global syncs using config found in res/raw/globalsyncs.json");
+		SyncsConfig config = new SyncsConfig(context, R.raw.globalsyncs);
+		if (config.hasSyncs()) {
+			config.createSyncs(getGlobalSmartStore());
+		}
+	}
+
+	/**
+	 * Setup user syncs using config found in res/raw/usersyncs.json
+	 */
+	public void setupUserSyncsFromDefaultConfig() {
+		SmartSyncLogger.d(TAG, "Setting up user syncs using config found in res/raw/usersyncs.json");
+		SyncsConfig config = new SyncsConfig(context, R.raw.usersyncs);
+		if (config.hasSyncs()) {
+			config.createSyncs(getSmartStore());
+		}
+	}
 }

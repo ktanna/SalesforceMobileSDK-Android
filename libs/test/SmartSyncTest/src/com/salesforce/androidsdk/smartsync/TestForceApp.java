@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -39,8 +39,7 @@ public class TestForceApp extends Application {
 
     @Override
     public void onCreate() {
-    	SmartSyncSDKManager.initNative(getApplicationContext(), new KeyImpl(),
-    			MainActivity.class);
+    	SmartSyncSDKManager.initNative(getApplicationContext(), MainActivity.class);
     	super.onCreate();
     	SmartSyncSDKManager.getInstance().setIsTestRun(true);
     }

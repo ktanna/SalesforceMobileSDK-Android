@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -24,17 +24,14 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-
 package com.salesforce.androidsdk.util.test;
-
-import junit.framework.Assert;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.Assert;
 
 public class JSONTestHelper {
-
 
 	/**
 	 * Compare two JSON
@@ -44,29 +41,38 @@ public class JSONTestHelper {
 	 * @throws JSONException
 	 */
 	public static void assertSameJSON(String message, Object expected, Object actual) throws JSONException {
-		// At least one null
-		if (expected == null || actual == null) {
-			// Both null
-			if (expected == null && actual == null) {
-				return;
-			}
-			// One null, not the other
-			else {
-				Assert.assertTrue(message, false);
-			}
+		if (!checkSameJSON(expected, actual)) {
+			Assert.fail(message +  " expected->(" + expected + ") actual->(" + actual + ")");
 		}
+	}
+
+	private static boolean checkSameJSON(Object expected, Object actual) throws JSONException {
+
+		// Only one null
+		if (actual != expected && (expected == null || actual == null)) {
+			return false;
+		}
+
+		// One one JSONObject.NULL
+		if (actual != expected && (expected == JSONObject.NULL || actual == JSONObject.NULL)) {
+			return false;
+		}
+
 		// Both arrays
 		else if (expected instanceof JSONArray && actual instanceof JSONArray) {
-			assertSameJSONArray(message, (JSONArray) expected, (JSONArray) actual); 
+			return checkSameJSONArray((JSONArray) expected, (JSONArray) actual);
 		}
+
 		// Both maps
 		else if (expected instanceof JSONObject && actual instanceof JSONObject) {
-			assertSameJSONObject(message, (JSONObject) expected, (JSONObject) actual); 
+			return checkSameJSONObject((JSONObject) expected, (JSONObject) actual);
 		}
+
 		// Atomic types
 		else {
+
 			// Comparing string representations, to avoid things like new Long(n) != new Integer(n) 
-			Assert.assertEquals(message, expected.toString(), actual.toString());
+			return expected.toString().equals(actual.toString());
 		}
 	}
 
@@ -78,20 +84,35 @@ public class JSONTestHelper {
 	 * @throws JSONException
 	 */
 	public static void assertSameJSONArray(String message, JSONArray expected, JSONArray actual) throws JSONException {
+		if (!checkSameJSONArray(expected, actual)) {
+			Assert.fail(message +  " expected->(" + expected + ") actual->(" + actual + ")");
+		}
+	}
+
+	private static boolean checkSameJSONArray(JSONArray expected, JSONArray actual) throws JSONException {
+
 		// First compare length
-		Assert.assertEquals(message, expected.length(), actual.length());
+		if (expected.length() != actual.length()) {
+			return false;
+		}
 		
 		// If string value match we are done
 		if (expected.toString().equals(actual.toString())) {
+
 			// Done
-			return;
+			return true;
 		}
+
 		// If string values don't match, it might still be the same object (toString does not sort fields of maps)
 		else {
+
 			// Compare values
 			for (int i=0; i<expected.length(); i++) {
-				assertSameJSON(message, expected.get(i), actual.get(i));
+				if (!checkSameJSON(expected.get(i), actual.get(i))) {
+					return false;
+				}
 			}
+			return true;
 		}
 	}
 
@@ -103,24 +124,37 @@ public class JSONTestHelper {
 	 * @throws JSONException
 	 */
 	public static void assertSameJSONObject(String message, JSONObject expected, JSONObject actual) throws JSONException {
-		// First compare length
-		Assert.assertEquals(message, expected.length(), actual.length());
-		
-		// If string value match we are done
-		if (expected.toString().equals(actual.toString())) {
-			// Done
-			return;
-		}
-		// If string values don't match, it might still be the same object (toString does not sort fields of maps)
-		else {
-			// Compare keys / values
-			JSONArray expectedNames = expected.names();
-			JSONArray actualNames = actual.names();
-			Assert.assertEquals(message, expectedNames.length(), actualNames.length());
-			JSONArray expectedValues = expected.toJSONArray(expectedNames);
-			JSONArray actualValues = actual.toJSONArray(expectedNames);
-			assertSameJSONArray(message, expectedValues, actualValues);
+		if (!checkSameJSONObject(expected, actual)) {
+			Assert.fail(message +  " expected->(" + expected + ") actual->(" + actual + ")");
 		}
 	}
 
+	private static boolean checkSameJSONObject(JSONObject expected, JSONObject actual) throws JSONException {
+
+		// First compare length
+		if (expected.length() != actual.length()) {
+			return false;
+		}
+
+		// If string value match we are done
+		if (expected.toString().equals(actual.toString())) {
+
+			// Done
+			return true;
+		}
+
+		// If string values don't match, it might still be the same object (toString does not sort fields of maps)
+		else {
+
+			// Compare keys / values
+			JSONArray expectedNames = expected.names();
+			JSONArray actualNames = actual.names();
+			if (expectedNames.length() != actualNames.length()) {
+				return false;
+			}
+			JSONArray expectedValues = expected.toJSONArray(expectedNames);
+			JSONArray actualValues = actual.toJSONArray(expectedNames);
+			return checkSameJSONArray(expectedValues, actualValues);
+		}
+	}
 }

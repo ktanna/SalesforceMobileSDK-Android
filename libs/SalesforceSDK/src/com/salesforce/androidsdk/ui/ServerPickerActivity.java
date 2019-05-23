@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, salesforce.com, inc.
+ * Copyright (c) 2014-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,19 +26,24 @@
  */
 package com.salesforce.androidsdk.ui;
 
-import java.util.List;
-
 import android.app.Activity;
 import android.app.FragmentManager;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
 import android.widget.RadioGroup;
 
+import com.salesforce.androidsdk.R;
 import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.config.LoginServerManager;
 import com.salesforce.androidsdk.config.LoginServerManager.LoginServer;
+import com.salesforce.androidsdk.config.RuntimeConfig;
+import com.salesforce.androidsdk.util.AuthConfigTask;
+
+import java.util.List;
 
 /**
  * This class provides UI to change the login server URL to use
@@ -48,12 +53,12 @@ import com.salesforce.androidsdk.config.LoginServerManager.LoginServer;
  * @author bhariharan
  */
 public class ServerPickerActivity extends Activity implements
-        android.widget.RadioGroup.OnCheckedChangeListener {
+        android.widget.RadioGroup.OnCheckedChangeListener, AuthConfigTask.AuthConfigCallbackInterface {
 
+    public static final String CHANGE_SERVER_INTENT = "com.salesforce.SERVER_CHANGED";
     private static final String SERVER_DIALOG_NAME = "custom_server_dialog";
 
     private CustomServerUrlEditor urlEditDialog;
-    private SalesforceR salesforceR;
     private LoginServerManager loginServerManager;
 
     /**
@@ -62,6 +67,7 @@ public class ServerPickerActivity extends Activity implements
     private void clearCustomUrlSetting() {
     	loginServerManager.reset();
     	rebuildDisplay();
+        urlEditDialog = new CustomServerUrlEditor();
     }
 
     /**
@@ -76,7 +82,7 @@ public class ServerPickerActivity extends Activity implements
     @Override
     public void onCheckedChanged(RadioGroup group, int checkedId) {
     	if (group != null) {
-    		final SalesforceServerRadioButton rb = (SalesforceServerRadioButton) group.findViewById(checkedId);
+    		final SalesforceServerRadioButton rb = group.findViewById(checkedId);
     		if (rb != null) {
     			final String name = rb.getName();
     			final String url = rb.getUrl();
@@ -102,16 +108,26 @@ public class ServerPickerActivity extends Activity implements
      * @return Server list group ID.
      */
     protected int getServerListGroupId() {
-        return salesforceR.idServerListGroup();
+        return R.id.sf__server_list_group;
     }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
     	super.onCreate(savedInstanceState);
-        salesforceR = SalesforceSDKManager.getInstance().getSalesforceR();
         loginServerManager = SalesforceSDKManager.getInstance().getLoginServerManager();
-        setContentView(salesforceR.layoutServerPicker());
-        final RadioGroup radioGroup = (RadioGroup) findViewById(getServerListGroupId());
+        setContentView(R.layout.sf__server_picker);
+
+        /*
+         * Hides the 'Add Connection' button if the MDM variable to disable
+         * adding of custom hosts is set.
+         */
+        final Button addConnectionButton = findViewById(R.id.sf__show_custom_url_edit);
+        if (addConnectionButton != null) {
+            if (RuntimeConfig.getRuntimeConfig(this).getBoolean(RuntimeConfig.ConfigKey.OnlyShowAuthorizedHosts)) {
+                addConnectionButton.setVisibility(View.GONE);
+            }
+        }
+        final RadioGroup radioGroup = findViewById(getServerListGroupId());
         radioGroup.setOnCheckedChangeListener(this);
     	urlEditDialog = new CustomServerUrlEditor();
     	urlEditDialog.setRetainInstance(true);
@@ -125,7 +141,7 @@ public class ServerPickerActivity extends Activity implements
 
     @Override
     public void onDestroy() {
-        final RadioGroup radioGroup = (RadioGroup) findViewById(getServerListGroupId());
+        final RadioGroup radioGroup = findViewById(getServerListGroupId());
         radioGroup.setOnCheckedChangeListener(null);
         urlEditDialog = null;
         super.onDestroy();
@@ -133,13 +149,13 @@ public class ServerPickerActivity extends Activity implements
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        getMenuInflater().inflate(salesforceR.menuClearCustomUrl(), menu);
+        getMenuInflater().inflate(R.menu.sf__clear_custom_url, menu);
         return super.onCreateOptionsMenu(menu);
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == salesforceR.idMenuClearCustomUrl()) {
+        if (item.getItemId() == R.id.sf__menu_clear_custom_url) {
             clearCustomUrlSetting();
             return true;
         } else {
@@ -154,8 +170,7 @@ public class ServerPickerActivity extends Activity implements
      * @param v View.
      */
     public void setPositiveReturnValue(View v) {
-        setResult(Activity.RESULT_OK, null);
-        finish();
+        (new AuthConfigTask(this)).execute();
     }
 
     /**
@@ -165,8 +180,9 @@ public class ServerPickerActivity extends Activity implements
      */
     public void showCustomUrlDialog(View v) {
     	final FragmentManager fragMgr = getFragmentManager();
-        //Add fragment only if it has not been added already
-        if(!urlEditDialog.isAdded()) {
+
+        // Adds fragment only if it has not been added already.
+        if (!urlEditDialog.isAdded()) {
             urlEditDialog.show(fragMgr, SERVER_DIALOG_NAME);
         }
     }
@@ -196,7 +212,7 @@ public class ServerPickerActivity extends Activity implements
      * Controls the elements in the layout based on past user choices.
      */
     protected void setupRadioButtons() {
-        final RadioGroup radioGroup = (RadioGroup) findViewById(getServerListGroupId());
+        final RadioGroup radioGroup = findViewById(getServerListGroupId());
         final List<LoginServer> servers = loginServerManager.getLoginServers();
         if (servers != null) {
             for (final LoginServer currentServer : servers) {
@@ -209,19 +225,29 @@ public class ServerPickerActivity extends Activity implements
      * Rebuilds the display.
      */
     public void rebuildDisplay() {
-        final RadioGroup radioGroup = (RadioGroup) findViewById(getServerListGroupId());
+        final RadioGroup radioGroup = findViewById(getServerListGroupId());
         radioGroup.removeAllViews();
         setupRadioButtons();
 
-    	/*
-    	 * Multiple users could have selected different custom endpoints, while
-    	 * logging into different orgs, which makes it difficult for us to
-    	 * choose which one to check by default. Hence, we check the first server
-    	 * on the list (usually production) by default.
-    	 */
-    	final SalesforceServerRadioButton rb = (SalesforceServerRadioButton) radioGroup.getChildAt(0);
-    	if (rb != null) {
-    		rb.setChecked(true);
-    	}
+        // Sets selected server.
+        final LoginServer selectedServer = loginServerManager.getSelectedLoginServer();
+        int numServers = radioGroup.getChildCount();
+        for (int i = 0; i < numServers; i++) {
+            final SalesforceServerRadioButton rb = (SalesforceServerRadioButton) radioGroup.getChildAt(i);
+            if (rb != null) {
+                final LoginServer loginServer = new LoginServer(rb.getName(), rb.getUrl(), rb.isCustom());
+                if (loginServer.equals(selectedServer)) {
+                    rb.setChecked(true);
+                }
+            }
+        }
+    }
+
+    @Override
+    public void onAuthConfigFetched() {
+        setResult(Activity.RESULT_OK, null);
+        final Intent changeServerIntent = new Intent(CHANGE_SERVER_INTENT);
+        sendBroadcast(changeServerIntent);
+        finish();
     }
 }

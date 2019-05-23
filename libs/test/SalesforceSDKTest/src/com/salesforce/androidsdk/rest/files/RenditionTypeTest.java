@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, salesforce.com, inc.
+ * Copyright (c) 2013-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,15 +26,23 @@
  */
 package com.salesforce.androidsdk.rest.files;
 
-import junit.framework.TestCase;
+import androidx.test.filters.SmallTest;
+import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-public class RenditionTypeTest extends TestCase {
+import org.junit.Assert;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
+@RunWith(AndroidJUnit4.class)
+@SmallTest
+public class RenditionTypeTest {
+
+    @Test
     public void testIsPng() {
-        assertTrue(RenditionType.THUMB120BY90.isPNG());
-        assertTrue(RenditionType.THUMB240BY180.isPNG());
-        assertTrue(RenditionType.THUMB720BY480.isPNG());
-        assertFalse(RenditionType.FLASH.isPNG());
-        assertFalse(RenditionType.PDF.isPNG());
+        Assert.assertTrue(RenditionType.THUMB120BY90.isPNG());
+        Assert.assertTrue(RenditionType.THUMB240BY180.isPNG());
+        Assert.assertTrue(RenditionType.THUMB720BY480.isPNG());
+        Assert.assertFalse(RenditionType.FLASH.isPNG());
+        Assert.assertFalse(RenditionType.PDF.isPNG());
     }
 }

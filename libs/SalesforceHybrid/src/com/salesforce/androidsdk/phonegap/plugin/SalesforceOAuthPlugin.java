@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-12, salesforce.com, inc.
+ * Copyright (c) 2011-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,22 +26,21 @@
  */
 package com.salesforce.androidsdk.phonegap.plugin;
 
-import android.util.Log;
-
-import com.salesforce.androidsdk.app.SalesforceSDKManager;
 import com.salesforce.androidsdk.phonegap.ui.SalesforceDroidGapActivity;
 import com.salesforce.androidsdk.phonegap.ui.SalesforceWebViewClientHelper;
+import com.salesforce.androidsdk.phonegap.util.SalesforceHybridLogger;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONException;
-import org.json.JSONObject;
 
 /**
  * PhoneGap plugin for Salesforce OAuth.
  */
 public class SalesforceOAuthPlugin extends ForcePlugin {
+
+    private static String TAG = "SalesforceOAuthPlugin";
 
     /**
      * Supported plugin actions that the client can take.
@@ -75,7 +74,7 @@ public class SalesforceOAuthPlugin extends ForcePlugin {
                     default: throw new Exception("No handler for action " + action);
                 }
             } catch (Exception e) {
-                Log.w("SalesforceOAuthPlugin.execute", e.getMessage(), e);
+                SalesforceHybridLogger.w(TAG, "execute: " + e.getMessage(), e);
                 callbackContext.error(e.getMessage());
             }
             }
@@ -90,7 +89,7 @@ public class SalesforceOAuthPlugin extends ForcePlugin {
      * @throws JSONException
      */
     protected void authenticate(final CallbackContext callbackContext) throws JSONException {
-        Log.i("SalesforceOAuthPlugin.authenticate", "authenticate called");
+        SalesforceHybridLogger.i(TAG, "authenticate called");
         ((SalesforceDroidGapActivity) cordova.getActivity()).authenticate(callbackContext);
 
         // Done.
@@ -105,15 +104,8 @@ public class SalesforceOAuthPlugin extends ForcePlugin {
      * @throws JSONException
      */
     protected void getAuthCredentials(CallbackContext callbackContext) throws JSONException {
-        Log.i("SalesforceOAuthPlugin.getAuthCredentials", "getAuthCredentials called");
-    	JSONObject credentials = ((SalesforceDroidGapActivity) cordova.getActivity()).getJSONCredentials();
-        if (credentials == null) {
-            Log.w("SalesforceOAuthPlugin.getAuthCredentials", "getAuthCredentials failed - never authenticated");
-            callbackContext.error("Never authenticated");
-        } else {
-            Log.i("SalesforceOAuthPlugin.getAuthCredentials", "getAuthCredentials successful");
-            callbackContext.success(credentials);
-        }    
+        SalesforceHybridLogger.i(TAG, "getAuthCredentials called");
+        ((SalesforceDroidGapActivity) cordova.getActivity()).getAuthCredentials(callbackContext);
     }
 
     /**
@@ -121,7 +113,7 @@ public class SalesforceOAuthPlugin extends ForcePlugin {
      * @param callbackContext Used when calling back into Javascript.
      */
     protected void getAppHomeUrl(CallbackContext callbackContext)  {
-        Log.i("SalesforceOAuthPlugin.getAppHomeUrl", "getAppHomeUrl called");
+        SalesforceHybridLogger.i(TAG, "getAppHomeUrl called");
         callbackContext.success(SalesforceWebViewClientHelper.getAppHomeUrl(cordova.getActivity()));
     }
 
@@ -130,8 +122,7 @@ public class SalesforceOAuthPlugin extends ForcePlugin {
      * @param callbackContext Used when calling back into Javascript.
      */
     protected void logoutCurrentUser(CallbackContext callbackContext) {
-        Log.i("SalesforceOAuthPlugin.logoutCurrentUser", "logoutCurrentUser called");
-    	SalesforceSDKManager.getInstance().logout(cordova.getActivity());
-        callbackContext.success();
+        SalesforceHybridLogger.i(TAG, "logoutCurrentUser called");
+        ((SalesforceDroidGapActivity) cordova.getActivity()).logout(callbackContext);
     }
 }

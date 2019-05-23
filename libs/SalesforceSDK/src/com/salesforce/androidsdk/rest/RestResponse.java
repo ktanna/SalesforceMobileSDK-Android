@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, salesforce.com, inc.
+ * Copyright (c) 2012-present, salesforce.com, inc.
  * All rights reserved.
  * Redistribution and use of this software in source and binary forms, with or
  * without modification, are permitted provided that the following conditions
@@ -26,76 +26,51 @@
  */
 package com.salesforce.androidsdk.rest;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Map;
+import com.salesforce.androidsdk.util.SalesforceSDKLogger;
 
-import org.apache.http.Header;
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.HttpStatus;
-import org.apache.http.ParseException;
-import org.apache.http.protocol.HTTP;
-import org.apache.http.util.EntityUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import android.util.Log;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
-import com.android.volley.NetworkResponse;
-
+import okhttp3.MediaType;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * RestResponse: Class to represent any REST response.
- * 
+ *
  */
 public class RestResponse {
-	
-	private final int statusCode;
-	private final HttpResponse response;
+
+    private static final String CONTENT_TYPE_HEADER_KEY = "Content-Type";
+	private static final String TAG = "RestResponse";
+
+	private final Response response;
 
 	// Populated when "consume" is called
+	private boolean consumed;
 	private byte[] responseAsBytes;
-	private String responseCharSet;
+	private Charset responseCharSet;
 
 	// Lazily computed
 	private String responseAsString;
 	private JSONObject responseAsJSONObject;
 	private JSONArray responseAsJSONArray;
-	private Map<String, String> headers;
 
 	/**
-	 * Constructor (used by the sendSync() call).
+	 * Constructor
 	 *
-	 * @param response HttpResponse object.
+	 * @param response okHttp Response object.
 	 */
-	public RestResponse(HttpResponse response) {
+	public RestResponse(Response response) {
 		this.response = response;
-		this.statusCode = response.getStatusLine().getStatusCode();
-		final Header[] responseHeaders = response.getAllHeaders();
-		this.headers = new HashMap<String, String>();
-		if (responseHeaders != null) {
-			for (int i = 0; i < responseHeaders.length; i++) {
-				if (responseHeaders[i] != null) {
-					this.headers.put(responseHeaders[i].getName(),
-							responseHeaders[i].getValue());
-				}
-			}
-		}
-	}
-
-	/**
-	 * Constructor (used by the sendAsync() call).
-	 *
-	 * @param response NetworkResponse object.
-	 */
-	public RestResponse(NetworkResponse response) {
-		this.response = null;
-		this.statusCode = response.statusCode;
-		this.responseAsBytes = response.data;
-		this.headers = response.headers;
 	}
 
 	/**
@@ -103,58 +78,55 @@ public class RestResponse {
 	 *
 	 * @return Map containing all headers.
 	 */
-	public Map<String, String> getAllHeaders() {
-		return headers;
+	public Map<String, List<String>> getAllHeaders() {
+		return response.headers().toMultimap();
 	}
 
 	/**
 	 * @return HTTP status code of the response
 	 */
 	public int getStatusCode() {
-		return statusCode; 
+		return response.code();
 	}
 
 	/**
 	 * @return true for response with 2xx status codes
 	 */
 	public boolean isSuccess() {
-		return RestResponse.isSuccess(statusCode);
+		return response.isSuccessful();
 	}
 
 	/**
 	 * @return true for response with 2xx status codes
 	 */
 	public static boolean isSuccess(int statusCode) {
-		return (statusCode >= HttpStatus.SC_OK && statusCode < HttpStatus.SC_MULTIPLE_CHOICES);
+		return statusCode / 100 == 2;
 	}
 
 	/**
 	 * Fully consume response entity content and closes content stream
 	 * Must be called before returning control to the UI thread
-	 * @throws IOException 
+	 * @throws IOException
 	 */
 	public void consume() throws IOException {
-		if (responseAsBytes != null) {
-			// Try to discard content
-			discardContent();
-			return;
-		}
-		HttpEntity entity = null;
-		if (response != null) {
-			entity = response.getEntity();
-		}
-		if (entity != null) {
+		if (!consumed && response != null) {
 			try {
-				responseCharSet = EntityUtils.getContentCharSet(entity);		
-				responseAsBytes = EntityUtils.toByteArray(entity);
-			} catch (IllegalStateException ex) {
-
-				// Content has already been consumed, but 'responseAsBytes' is probably not set yet.
-				Log.e("RestResponse: consume()", "Content has already been consumed", ex);
-				responseAsBytes = new byte[0];
+				ResponseBody body = response.body();
+				if (body != null) {
+					MediaType mType = body.contentType();
+					responseAsBytes = body.bytes();
+					responseCharSet = mType == null || mType.charset() == null ? StandardCharsets.UTF_8 : mType.charset();
+					if (responseAsBytes != null && responseAsBytes.length > 0) {
+						responseAsString = new String(responseAsBytes, responseCharSet);
+					}
+				} else {
+					responseAsBytes = new byte[0];
+					responseCharSet = StandardCharsets.UTF_8;
+				}
+			} finally {
+				consumed = true;
+				response.close();
 			}
-		} else {
-			responseAsBytes = new byte[0];
 		}
 	}
 
@@ -165,8 +137,8 @@ public class RestResponse {
 	public void consumeQuietly() {
 		try {
 			consume();
-		} catch (IOException e) {
-			Log.e("RestResponse: consume()", "Content could not be written to byte array", e);
+		} catch (Exception e) {
+			SalesforceSDKLogger.e(TAG, "Content could not be written to a byte array", e);
 		}
 	}
 
@@ -182,15 +154,23 @@ public class RestResponse {
 	}
 
 	/**
+	 * Return content type
+	 * @return value of content-type header or null if header not found
+	 */
+	public String getContentType() {
+		return response.header(CONTENT_TYPE_HEADER_KEY);
+	}
+
+	/**
 	 * String is built the first time the method is called.
 	 *
 	 * @return string for entire response
-	 * @throws ParseException
 	 * @throws IOException
 	 */
-	public String asString() throws ParseException, IOException {
+	public String asString() throws IOException {
 		if (responseAsString == null) {
-			responseAsString = new String(asBytes(), (responseCharSet == null ? HTTP.UTF_8 : responseCharSet));
+			byte[] bytes = asBytes(); // will also compute responseCharSet
+			responseAsString = new String(bytes, responseCharSet);
 		}
 		return responseAsString;
 	}
@@ -199,11 +179,10 @@ public class RestResponse {
 	 * JSONObject is built the first time the method is called.
 	 *
 	 * @return JSONObject for response
-	 * @throws ParseException
 	 * @throws JSONException
 	 * @throws IOException
 	 */
-	public JSONObject asJSONObject() throws ParseException, JSONException, IOException {
+	public JSONObject asJSONObject() throws JSONException, IOException {
 		if (responseAsJSONObject == null) {
 			responseAsJSONObject = new JSONObject(asString());
 		}
@@ -214,11 +193,10 @@ public class RestResponse {
 	 * JSONArray is built the first time the method is called.
 	 *
 	 * @return JSONObject for response
-	 * @throws ParseException
 	 * @throws JSONException
 	 * @throws IOException
 	 */
-	public JSONArray asJSONArray() throws ParseException, JSONException, IOException {
+	public JSONArray asJSONArray() throws JSONException, IOException {
 		if (responseAsJSONArray == null) {
 			responseAsJSONArray = new JSONArray(asString());
 		}
@@ -227,12 +205,12 @@ public class RestResponse {
 
 	/**
 	 * Streams the response content. This stream <strong>must</strong> be consumed either
-	 * by reading from it, calling a method like {@link com.google.common.io.Closeables#closeQuietly(InputStream)}
+	 * by reading from it and calling {@link InputStream#close()},
 	 * or calling {@link #consume()} to discard the contents.
 	 *
 	 * <p>>
 	 * If the response is consumed as a stream, {@link #asBytes()} will return an empty array,
-	 * {@link #asString()} will return an emtpy string and both {@link #asJSONArray()} and
+	 * {@link #asString()} will return an empty string and both {@link #asJSONArray()} and
 	 * {@link #asJSONObject()} will throw exceptions.
 	 * </p>
 	 *
@@ -240,12 +218,15 @@ public class RestResponse {
 	 * @throws IOException if the stream could not be created or has already been consumed
 	 */
 	public InputStream asInputStream() throws IOException {
-		try {
-			// Write an empty array so that no data can be read by other accessor methods
-			responseAsBytes = new byte[0];
-			return response.getEntity().getContent();
-		} catch (IllegalStateException e) {
+		if (consumed) {
 			throw new IOException("Content has been consumed");
+		}
+		else {
+			responseAsBytes = new byte[0];
+			responseCharSet = StandardCharsets.UTF_8;
+			InputStream stream = response.body().byteStream();
+			consumed = true;
+			return stream;
 		}
 	}
 
@@ -254,24 +235,8 @@ public class RestResponse {
 		try {
 			return asString();
 		} catch (Exception e) {
-			Log.e("RestResponse: toString()", "Exception caught while calling asString()", e);
+            SalesforceSDKLogger.e(TAG, "Exception thrown while converting to string", e);
 			return ((response == null) ? "" : response.toString());
-		}
-	}
-
-	/**
-	 * Consume and discard the entity content.
-	 */
-	private void discardContent() {
-		if (response == null) {
-			// Nothing to consume
-			return;
-		}
-
-		try {
-			response.getEntity().consumeContent();
-		} catch (IOException e) {
-			// The stream has already been consumed
 		}
 	}
 }

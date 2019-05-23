@@ -1,4 +1,5 @@
-[![Build Status](https://travis-ci.org/forcedotcom/SalesforceMobileSDK-Android.svg?branch=unstable)](https://travis-ci.org/forcedotcom/SalesforceMobileSDK-Android)
+[![CircleCI](https://circleci.com/gh/forcedotcom/SalesforceMobileSDK-Android/tree/dev.svg?style=svg)](https://circleci.com/gh/forcedotcom/workflows/SalesforceMobileSDK-Android/tree/dev)
+[![codecov](https://codecov.io/gh/forcedotcom/SalesforceMobileSDK-Android/branch/dev/graph/badge.svg)](https://codecov.io/gh/forcedotcom/SalesforceMobileSDK-Android/branch/dev)
 
 # Salesforce.com Mobile SDK for Android
 
@@ -6,6 +7,7 @@ You have arrived at the source repository for the Salesforce Mobile SDK for Andr
 
 - If you'd like to work with the source code of the SDK itself, you've come to the right place! You can browse sample app source code and debug down through the layers to get a feel for how everything works under the covers. Read on for instructions on how to get started with the SDK in your development environment.
 - If you're just eager to start developing your own application, the quickest way is to use our npm binary distribution package, called [forcedroid](https://npmjs.org/package/forcedroid), which is hosted on [npmjs.org](https://npmjs.org/). Getting started is as simple as installing the npm package and launching your template app. You'll find more details on the forcedroid package page.
+- If you'd like to add the SDK to your existing app, the easiest way is to add our libraries as Gradle dependencies from our Maven repo [here](https://bintray.com/forcedotcom/salesforcemobilesdk).
 
 Installation (do this first - really)
 ==
@@ -21,18 +23,25 @@ This pulls submodule dependencies from github.
 Introduction
 ==
 
-### What's New in 4.1
+### What's New in 7.1
 
-**SmartStore Enhancements**
-- SmartStore now allows internal (non-leaf) nodes in index paths. This feature is useful in LIKE and MATCH queries.
-- SmartStore now allows arrays in compound index paths.
+**SmartSync Data Framework Updates**
+- SmartSync Data Framework now supports a batch sync up target that uses the Salesforce Composite API for uploading groups of up to 25 records per call.
+- New methods allow native apps to stop and restart in-flight sync operations. To reflect the new sync state, we’ve added a stopped sync status.
+- You can now call `cleanResyncGhosts` with a sync name.
 
-**Library Upgrades**
-- We've updated React Native to version 0.20.
+**Security Updates**
+- We’ve upgraded our master key security to use the Android Keystore.
 
-**Other Technical Improvements**
-- Improvements to sample apps.
-- Various bug fixes.
+**Miscellaneous Changes**
+- We’ve improved support for using biometric input to supply application passcodes.
+
+**Version Updates**
+- Android Studio: 3.4.1
+- SQLCipher: 4.0.1
+
+**Deprecation**
+- The `encrypt` and `decrypt` methods in `SalesforceSDKManager` have been deprecated in favor of new methods that take an additional parameter.
 
 Check http://developer.force.com/mobilesdk for additional articles and tutorials.
 
@@ -42,15 +51,12 @@ The Salesforce Mobile SDK provides essential libraries for quickly building nati
 ### Hybrid Applications
 HTML5 is quickly emerging as dominant technology for developing cross-platform mobile applications. While developers can create sophisticated apps with HTML5 and JavaScript, some limitations remain, specifically: session management, access to the camera and address book, and the inability to distribute apps inside public App Stores. The Salesforce Mobile Container makes possible to combine the ease of web app development with power of the Android platform by wrapping a web app inside a thin native container, producing a hybrid application.
 
-### WARNING: OAuth2 token storage on devices without encryption
-The Salesforce Mobile SDK provides PIN-based OAuth token encryption for Android devices that don't provide full storage encryption functionality.  The SDK implementation is **NOT** designed to provide complete security. It's simply offered as an option for temporarily protecting your app from eavesdroppers. Please use caution in your production deployment with sensitive data. **We strongly recommend deploying production apps on the latest generation of Android devices with build-in device encryption.**
-
 Setting up your Development Environment
 ==
 
 The following steps will help you get started with your development environment, whether you choose to develop native apps or hybrid apps. See the `README` files in the `native/` and `hybrid/` folders for additional notes pertaining to development in those environments.
 
-1. Install the Android SDK (r23 or above) and Android Studio: http://developer.android.com/sdk/index.html
+1. Install the Android SDK and Android Studio: http://developer.android.com/sdk/index.html
 2. Get setup on github: http://help.github.com/
 
 Downloading the Salesforce SDK
@@ -65,8 +71,10 @@ Documentation
 ==
 
 * [SalesforceSDK](http://forcedotcom.github.com/SalesforceMobileSDK-Android/index.html)
+* Salesforce Mobile SDK Development Guide -- [PDF](https://github.com/forcedotcom/SalesforceMobileSDK-Shared/blob/master/doc/mobile_sdk.pdf) [HTML](https://developer.salesforce.com/docs/atlas.en-us.mobile_sdk.meta/mobile_sdk/preface_intro.htm)
+* [Mobile SDK Trail](https://trailhead.salesforce.com/trails/mobile_sdk_intro)
 
 Discussion
 ==
 
-If you would like to make suggestions, have questions, or encounter any issues, we'd love to hear from you.  Post any feedback you have on our [Google+ Community](https://plus.google.com/communities/114225252149514546445).
+If you would like to make suggestions, have questions, or encounter any issues, we'd love to hear from you. Post any feedback you have on [Salesforce StackExchange](https://salesforce.stackexchange.com/questions/tagged/mobilesdk).
