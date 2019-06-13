@@ -405,9 +405,14 @@ public class DBOpenHelper extends SQLiteOpenHelper {
 			database.execSQL("PRAGMA cipher_default_kdf_iter = 4000");
 		}
 
+		/**
+		 * Need to migrate for SqlCipher 4.x
+		 * @param database db being processed
+		 */
 		public void postKey(SQLiteDatabase database) {
+			database.rawExecSQL("PRAGMA cipher_migrate");
 		}
-	};
+	}
 
 	private static void deleteFiles(Context ctx, String prefix) {
 		final String dbPath = ctx.getApplicationInfo().dataDir + "/databases";
